@@ -1,13 +1,16 @@
+use std::collections::HashMap;
+
 use crate::Markdown;
 use crate::MarkdownInline;
 use crate::MarkdownText;
 
+use nom::sequence::separated_pair;
 use nom::{
-    branch::alt,
-    bytes::complete::{is_not, tag, take, take_while1},
-    character::is_digit,
-    combinator::{map, not},
-    multi::{many0, many1},
+    branch::{alt, permutation},
+    bytes::complete::{is_not, tag, take, take_while1, take_while},
+    character::{is_digit, complete::{multispace1, alphanumeric1}},
+    combinator::{map, not, self, opt},
+    multi::{many0, many1, separated_list0},
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
@@ -28,8 +31,48 @@ fn parse_boldtext(i: &str) -> IResult<&str, &str> {
     delimited(tag("**"), is_not("**"), tag("**"))(i)
 }
 
+fn match_space_around(i: &str) -> IResult<&str, &str> {
+    alt((
+        delimited(multispace1, is_not("*"), multispace1),
+        preceded(multispace1, is_not("*")),
+        terminated(is_not("*"), multispace1),
+    ))(i)
+}
+
+fn parse_italics1(i: &str) -> IResult<&str, &str> {
+    delimited(tag("*"), alt(((match_space_around), is_not("*") )), tag("*"))(i)
+}
+
+fn match_surround_text<'a>(i: &'a str, surrounder: &'a str) -> IResult<&'a str, &'a str> {
+    delimited(
+        pair(tag(surrounder), not(tag(" "))), // Match opening "*" and ensure no space after it
+        alt((is_not("*"), is_not("\n"))),
+        pair(not(tag(" ")), tag(surrounder)) // Ensure no space before closing "*" and match it
+    )(i)
+}
+
+fn parse_attributes(input: &str) -> IResult<&str, HashMap<&str, &str>> {
+    let parse_key = alphanumeric1;
+    let parse_value = delimited(tag("\""), take_while(|c| c != '"'), tag("\""));
+
+    let parse_pair = separated_pair(parse_key, tag("="), parse_value);
+    let parse_pairs = separated_list0(multispace1, parse_pair);
+
+    let mut attributes_parser = delimited(
+        tag("{"),
+        map(
+            opt(parse_pairs),
+            |pairs| pairs.unwrap_or_default().into_iter().collect::<HashMap<_, _>>(),
+        ),
+        tag("}"),
+    );
+
+    attributes_parser(input)
+}
+
+
 fn parse_italics(i: &str) -> IResult<&str, &str> {
-    delimited(tag("*"), is_not("*"), tag("*"))(i)
+    match_surround_text(i, "*")
 }
 
 fn parse_inline_code(i: &str) -> IResult<&str, &str> {
@@ -50,15 +93,25 @@ fn parse_image(i: &str) -> IResult<&str, (&str, &str)> {
     )(i)
 }
 
-// we want to match many things that are not any of our specail tags
-// but since we have no tools available to match and consume in the negative case (without regex)
-// we need to match against our tags, then consume one char
-// we repeat this until we run into one of our special characters
-// then we join our array of characters into a String
+// // we want to match many things that are not any of our specail tags
+// // but since we have no tools available to match and consume in the negative case (without regex)
+// // we need to match against our tags, then consume one char
+// // we repeat this until we run into one of our special characters
+// // then we join our array of characters into a String
+// fn parse_plaintext(i: &str) -> IResult<&str, String> {
+//     map(
+//         many1(preceded(
+//             not(alt((tag("*"), tag("`"), tag("["), tag("!["), tag("\n")))),
+//             take(1u8),
+//         )),
+//         |vec| vec.join(""),
+//     )(i)
+// }
+
 fn parse_plaintext(i: &str) -> IResult<&str, String> {
     map(
         many1(preceded(
-            not(alt((tag("*"), tag("`"), tag("["), tag("!["), tag("\n")))),
+            not(tag("\n")),
             take(1u8),
         )),
         |vec| vec.join(""),

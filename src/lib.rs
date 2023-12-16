@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+
 pub mod parser;
 pub mod translator;
+pub mod tests;
 
 pub type MarkdownText = Vec<MarkdownInline>;
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Markdown {

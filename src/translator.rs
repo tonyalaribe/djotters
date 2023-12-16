@@ -22,7 +22,7 @@ fn translate_boldtext(boldtext: String) -> String {
 }
 
 fn translate_italic(italic: String) -> String {
-    format!("<i>{}</i>", italic)
+    format!("<em>{}</em>", italic)
 }
 
 fn translate_inline_code(code: String) -> String {
@@ -104,7 +104,7 @@ mod tests {
     fn test_translate_italic() {
         assert_eq!(
             translate_italic(String::from("italic af")),
-            String::from("<i>italic af</i>")
+            String::from("<em>italic af</em>")
         );
     }
 
@@ -148,7 +148,7 @@ mod tests {
             MarkdownInline::Image(String::from("tag"), String::from("https://link.com")),
             MarkdownInline::Plaintext(String::from(". the end!")),
         ]);
-        assert_eq!(x, String::from("Foobar is a Python library for dealing with word pluralization.<b>bold</b><i>italic</i><code>code</code><a href=\"https://link.com\">tag</a><img src=\"https://link.com\" alt=\"tag\" />. the end!"));
+        assert_eq!(x, String::from("Foobar is a Python library for dealing with word pluralization.<b>bold</b><em>italic</em><code>code</code><a href=\"https://link.com\">tag</a><img src=\"https://link.com\" alt=\"tag\" />. the end!"));
         let x = translate_text(vec![]);
         assert_eq!(x, String::from(""));
     }
@@ -236,7 +236,7 @@ foobar.singularize(\'phenomena\') # returns \'phenomenon\'
                 MarkdownInline::Italic(String::from("Foobar")),
                 MarkdownInline::InlineCode(String::from("Foobar")),
             ]),
-            String::from("<p>Foobar<b>Foobar</b><i>Foobar</i><code>Foobar</code></p>")
+            String::from("<p>Foobar<b>Foobar</b><em>Foobar</em><code>Foobar</code></p>")
         );
     }
 }
