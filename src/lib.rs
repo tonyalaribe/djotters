@@ -4,26 +4,26 @@ pub mod parser;
 pub mod translator;
 pub mod tests;
 
-pub type MarkdownText = Vec<MarkdownInline>;
-
+pub type MarkdownText<'a> = Vec<MarkdownInline<'a>>;
+pub type MarkdownAttributes<'a> = Option<HashMap<&'a str, &'a str>>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Markdown {
-    Heading(usize, MarkdownText),
-    OrderedList(Vec<MarkdownText>),
-    UnorderedList(Vec<MarkdownText>),
-    Line(MarkdownText),
-    Codeblock(String, String),
+pub enum Markdown<'a> {
+    Heading(usize, MarkdownText<'a>, MarkdownAttributes<'a>),
+    OrderedList(Vec<MarkdownText<'a>>, MarkdownAttributes<'a>),
+    UnorderedList(Vec<MarkdownText<'a>>, MarkdownAttributes<'a>),
+    Line(MarkdownText<'a>, MarkdownAttributes<'a>),
+    Codeblock(&'a str, &'a str, MarkdownAttributes<'a>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum MarkdownInline {
-    Link(String, String),
-    Image(String, String),
-    InlineCode(String),
-    Bold(String),
-    Italic(String),
-    Plaintext(String),
+pub enum MarkdownInline<'a> {
+    Link(&'a str, &'a str, MarkdownAttributes<'a>),
+    Image(&'a str, &'a str, MarkdownAttributes<'a>),
+    InlineCode(&'a str, MarkdownAttributes<'a>),
+    Bold(&'a str, MarkdownAttributes<'a>),
+    Italic(&'a str, MarkdownAttributes<'a>),
+    Plaintext(&'a str, MarkdownAttributes<'a>),
 }
 
 pub fn markdown(md: &str) -> String {

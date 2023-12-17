@@ -78,7 +78,7 @@ fn translate_text(text: MarkdownText) -> String {
     text.iter()
         .map(|part| match part {
             MarkdownInline::Bold(text) => translate_boldtext(text.to_string()),
-            MarkdownInline::Italic(text) => translate_italic(text.to_string()),
+            MarkdownInline::Italic(text, attr) => translate_italic(text.to_string()),
             MarkdownInline::InlineCode(code) => translate_inline_code(code.to_string()),
             MarkdownInline::Link(text, url) => translate_link(text.to_string(), url.to_string()),
             MarkdownInline::Image(text, url) => translate_image(text.to_string(), url.to_string()),
@@ -142,7 +142,7 @@ mod tests {
                 "Foobar is a Python library for dealing with word pluralization.",
             )),
             MarkdownInline::Bold(String::from("bold")),
-            MarkdownInline::Italic(String::from("italic")),
+            MarkdownInline::Italic(String::from("italic"), None),
             MarkdownInline::InlineCode(String::from("code")),
             MarkdownInline::Link(String::from("tag"), String::from("https://link.com")),
             MarkdownInline::Image(String::from("tag"), String::from("https://link.com")),
@@ -233,7 +233,7 @@ foobar.singularize(\'phenomena\') # returns \'phenomenon\'
             translate_line(vec![
                 MarkdownInline::Plaintext(String::from("Foobar")),
                 MarkdownInline::Bold(String::from("Foobar")),
-                MarkdownInline::Italic(String::from("Foobar")),
+                MarkdownInline::Italic(String::from("Foobar"), None),
                 MarkdownInline::InlineCode(String::from("Foobar")),
             ]),
             String::from("<p>Foobar<b>Foobar</b><em>Foobar</em><code>Foobar</code></p>")
