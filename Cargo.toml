@@ -11,3 +11,4 @@ edition = "2018"
 [dependencies]
 nom = "7.1.1"
 pretty_assertions = "1.4.0"
+html-escape = "0.2.13"

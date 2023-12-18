@@ -5,7 +5,12 @@ pub mod translator;
 pub mod tests;
 
 pub type MarkdownText<'a> = Vec<MarkdownInline<'a>>;
-pub type MarkdownAttributes<'a> = Option<HashMap<&'a str, &'a str>>;
+
+// To hold parsed markdown attrributes. eg:
+// ```
+//  { #idValue .className1 .className2 class="extraclass3" data-extra-attribute="attribute value" }
+// ```
+pub type MarkdownAttributes<'a> = Option<HashMap<&'a str, String>>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Markdown<'a> {
