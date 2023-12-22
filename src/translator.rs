@@ -3,8 +3,6 @@ use crate::MarkdownInline;
 use crate::MarkdownText;
 
 pub fn translate(md: Vec<Markdown>) -> String {
-    println!("{:?}", md);
-
     md.iter()
         .map(|bit| match bit {
             Markdown::Heading(size, line, attr) => translate_header(*size, line.to_vec(), attr),
@@ -14,6 +12,7 @@ pub fn translate(md: Vec<Markdown>) -> String {
                 translate_codeblock(lang, code, attr)
             }
             Markdown::Line(line, attr) => translate_line(line.to_vec(), attr),
+            Markdown::LineBreak => "<br/>".into(),
         })
         .collect::<Vec<String>>()
         .join("")
@@ -42,7 +41,7 @@ fn translate_link(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
 
 fn translate_image(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attrs);
-    format!("<img src=\"{url}\" alt=\"{text}\" {attr_txt}/>", )
+    format!("<img src=\"{url}\" alt=\"{text}\" {attr_txt}/>\n", )
 }
 
 fn translate_list_elements(lines: Vec<MarkdownText>) -> String {
@@ -55,29 +54,29 @@ fn translate_list_elements(lines: Vec<MarkdownText>) -> String {
 
 fn translate_header(size: usize, text: MarkdownText, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
-    format!("<h{}{attr_txt}>{}</h{}>", size, translate_text(text), size)
+    format!("<h{}{attr_txt}>{}</h{}>\n", size, translate_text(text), size)
 }
 
 fn translate_unordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
-    format!("<ul{attr_txt}>{}</ul>", translate_list_elements(lines.to_vec()))
+    format!("<ul{attr_txt}>{}</ul>\n", translate_list_elements(lines.to_vec()))
 }
 
 fn translate_ordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
-    format!("<ol{attr_txt}>{}</ol>", translate_list_elements(lines.to_vec()))
+    format!("<ol{attr_txt}>{}</ol>\n", translate_list_elements(lines.to_vec()))
 }
 
 fn translate_codeblock(lang: &str, code: &str, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
-    format!("<pre><code class=\"lang-{}\"{attr_txt}>{}</code></pre>", lang, code)
+    format!("<pre><code class=\"lang-{}\"{attr_txt}>{}</code></pre>\n", lang, code)
 }
 
 fn translate_line(text: MarkdownText, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
     let line = translate_text(text);
     if line.len() > 0 {
-        format!("<p{attr_txt}>{}</p>", line)
+        format!("<p{attr_txt}>{}</p>\n", line)
     } else {
         format!("{}", line)
     }
@@ -92,6 +91,7 @@ fn translate_text(text: MarkdownText) -> String {
             MarkdownInline::Link(text, url, attr) => translate_link(text, url, attr),
             MarkdownInline::Image(text, url, attr) => translate_image(text, url, attr),
             MarkdownInline::Plaintext(text, attr) => html_escape::encode_text(text).to_string(),
+            MarkdownInline::LineBreak => todo!(),
         })
         .collect::<Vec<String>>()
         .join("")

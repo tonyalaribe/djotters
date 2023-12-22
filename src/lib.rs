@@ -19,6 +19,7 @@ pub enum Markdown<'a> {
     UnorderedList(Vec<MarkdownText<'a>>, MarkdownAttributes<'a>),
     Line(MarkdownText<'a>, MarkdownAttributes<'a>),
     Codeblock(&'a str, &'a str, MarkdownAttributes<'a>),
+    LineBreak,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -28,7 +29,8 @@ pub enum MarkdownInline<'a> {
     InlineCode(&'a str, MarkdownAttributes<'a>),
     Bold(&'a str, MarkdownAttributes<'a>),
     Italic(&'a str, MarkdownAttributes<'a>),
-    Plaintext(&'a str, MarkdownAttributes<'a>),
+    Plaintext(&'a str, MarkdownAttributes<'a>), 
+    LineBreak,
 }
 
 pub fn markdown(md: &str) -> String {

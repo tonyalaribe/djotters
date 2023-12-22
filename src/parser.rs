@@ -4,7 +4,7 @@ use crate::{Markdown, MarkdownAttributes};
 use crate::MarkdownInline;
 use crate::MarkdownText;
 
-use nom::{sequence::separated_pair, bytes::complete::{take_until, take_till}, character::complete::{multispace0, anychar}, combinator::{eof, peek, verify, rest, recognize}, Parser, multi::many_till};
+use nom::{sequence::separated_pair, bytes::complete::{take_until, take_till}, character::complete::{multispace0, anychar}, combinator::{eof, peek, verify, rest, recognize, value, success}, Parser, multi::many_till};
 use nom::{
     branch::{alt, permutation},
     bytes::complete::{is_not, tag, take, take_while1, take_while},
@@ -24,6 +24,7 @@ pub fn parse_markdown(i: &str) -> IResult<&str, Vec<Markdown>> {
             Markdown::Codeblock(e.0.0, e.1, e.0.1)
         }),
         map(parse_markdown_paragraph, |e| Markdown::Line(e.0,e.1)),
+        map(tag("\n"), |e| Markdown::LineBreak ),
     )))(i)
 }
 
@@ -36,6 +37,7 @@ fn match_surround_text<'a>(i: &'a str, surrounder: &'a str) -> IResult<&'a str, 
         || text.starts_with(' ') 
         || text.ends_with('\u{a0}') // Unicode space
         || text.starts_with('\u{a0}') // Unicode space
+        || text.contains("\n") // Should not contain a line break
         {
             Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Char)))
         } else {
@@ -101,7 +103,6 @@ fn parse_attributes(input: &str) -> IResult<&str, HashMap<&str, String>> {
         map(parse_attributes, |attrs| vec_to_hashmap_concat(attrs) ),
         tag("}")
     );
-
     attributes_parser(input)
 }
 
@@ -116,8 +117,8 @@ fn match_surround_with_attrs<'a>(separator: &'a str) -> impl Fn(&'a str) -> IRes
 
 fn parse_link(i: &str) -> IResult<&str, (&str, &str, MarkdownAttributes)> {
     tuple((
-        delimited(tag("["), is_not("]"), tag("]")),
-        delimited(tag("("), is_not(")"), tag(")")),
+        delimited(tag("["), take_until("]"), tag("]")),
+        delimited(tag("("), take_until(")"), tag(")")),
         opt(parse_attributes),
         )
     )(i)
@@ -125,15 +126,11 @@ fn parse_link(i: &str) -> IResult<&str, (&str, &str, MarkdownAttributes)> {
 
 fn parse_image(i: &str) -> IResult<&str, (&str, &str, MarkdownAttributes)> {
     tuple((
-        delimited(tag("!["), is_not("]"), tag("]")),
-        delimited(tag("("), is_not(")"), tag(")")),
+        delimited(tag("!["), take_until("]"), tag("]")),
+        delimited(tag("("), take_until(")"), tag(")")),
         opt(parse_attributes),
     ))(i)
 }
-
-// fn parse_plaintext(i: &str) -> IResult<&str, (&str, MarkdownAttributes)> {
-//     pair(take_while1(|c| c!='\n'), opt(parse_attributes))(i)
-// }
 
 /// Return the remaining input.
 ///
@@ -153,7 +150,26 @@ where
 }
 
 fn parse_plaintext(i: &str) -> IResult<&str, (&str, MarkdownAttributes)> {
-    pair(alt((take_before0(parse_markdown_not_plain), rest1)), opt(parse_attributes))(i)
+    let (input, output) = recognize(
+        many_till(
+            anychar,
+            peek(
+                alt(
+                    (
+                        parse_markdown_not_plain, 
+                        map(tag("\n"), |_|MarkdownInline::LineBreak),
+                        map(eof, |_|MarkdownInline::LineBreak),
+                    )
+                )
+            ),
+        )
+    )(i)?;
+    
+    if output == ""{
+        Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Eof)))
+    }else{
+        Ok((input, (output, None)))
+    }
 }
 
 fn parse_markdown_not_plain(i: &str) -> IResult<&str, MarkdownInline> {
@@ -161,10 +177,16 @@ fn parse_markdown_not_plain(i: &str) -> IResult<&str, MarkdownInline> {
         map(match_surround_with_attrs("*"), |(s, attr): (&str, MarkdownAttributes)| {
             MarkdownInline::Italic(s, attr)
         }),
+        map(match_surround_with_attrs("_"), |(s, attr): (&str, MarkdownAttributes)| {
+            MarkdownInline::Italic(s, attr)
+        }),
         map(match_surround_with_attrs("`"), |(s, attr): (&str, MarkdownAttributes)| {
             MarkdownInline::InlineCode(s, attr)
         }),
         map(match_surround_with_attrs("**"), |(s, attr): (&str, MarkdownAttributes)| {
+            MarkdownInline::Bold(s, attr)
+        }),
+        map(match_surround_with_attrs("__"), |(s, attr): (&str, MarkdownAttributes)| {
             MarkdownInline::Bold(s, attr)
         }),
         map(parse_image, |(tag, url, attr): (&str, &str, MarkdownAttributes)| {
@@ -184,11 +206,11 @@ fn parse_markdown_inline(i: &str) -> IResult<&str, MarkdownInline> {
 }
 
 fn parse_markdown_text(i: &str) -> IResult<&str, MarkdownText> {
-    terminated(many1(parse_markdown_inline), alt((tag("\n"), eof)))(i)
+    many1(parse_markdown_inline)(i)
 }
 
 fn parse_markdown_paragraph(i: &str) -> IResult<&str, (MarkdownText, MarkdownAttributes)> {
-    pair(parse_markdown_text, opt(parse_attributes))(i)
+    pair(terminated(parse_markdown_text, alt((tag("\n"),eof ))), opt(parse_attributes))(i)
 }
 
 // this guy matches the literal character #
@@ -200,8 +222,15 @@ fn parse_header_tag(i: &str) -> IResult<&str, usize> {
 }
 
 // this combines a tuple of the header tag and the rest of the line
+// # Heading title {.class #idName}\n
+//
 fn parse_header(i: &str) -> IResult<&str, (usize, MarkdownText, MarkdownAttributes)> {
-    tuple((parse_header_tag, parse_markdown_text, opt(parse_attributes)))(i)
+    terminated(
+        tuple(
+            (parse_header_tag, parse_markdown_text, opt(parse_attributes))
+        ),
+        alt((tag("\n"), eof))
+    )(i)
 }
 
 fn parse_unordered_list_tag(i: &str) -> IResult<&str, &str> {
@@ -267,7 +296,7 @@ mod tests {
         );
 
         assert_eq!(parse_attributes("{#idName .class1 .class2 id=\"abc\" b=\"c\" }"),
-            Ok(("", HashMap::from([("id".into(), "idNameabc".into()), ("class".into(), "class1 class2".into())])))
+            Ok(("", HashMap::from([("b".into(), "c".into()), ("id".into(), "idName abc".into()), ("class".into(), "class1 class2".into())])))
         )
     }
 
@@ -301,10 +330,26 @@ mod tests {
             parse_markdown_inline("*here is italic*{ id=\"abc\" b=\"c\" }"),
             Ok(("", MarkdownInline::Italic("here is italic", Some(HashMap::from([("id".into(), "abc".into()), ("b".into(), "c".into())])))))
         );
+        assert_eq!(
+            parse_markdown_inline("*here is \nitalic*"),
+            Ok(("\nitalic*", MarkdownInline::Plaintext("*here is ", None)))
+        )
     }
 
     #[test]
     fn test_parse_markdown_text(){
+        assert_eq!(parse_markdown_not_plain("*here is italic*"),
+            Ok(("", MarkdownInline::Italic("here is italic", None)))
+        );
+        assert_eq!(parse_plaintext("*here is \nitalic*"),
+            Ok(("\nitalic*", ("*here is ",  None)))
+        );
+        assert_eq!(parse_plaintext(""),
+             Err(NomErr::Error(Error {
+                input: "",
+                code: ErrorKind::Eof
+            }))
+        );
         assert_eq!(
             parse_markdown_text("*here is italic*"),
             Ok(("", vec![MarkdownInline::Italic("here is italic", None)]))
@@ -339,80 +384,127 @@ mod tests {
         assert_eq!(parse_markdown("foo*bar*"),
             Ok(("", vec![Markdown::Line(vec![MarkdownInline::Plaintext("foo", None), MarkdownInline::Italic("bar", None)], None)]))
         );
+        assert_eq!(parse_markdown("## foo*bar*"),
+            Ok(("", vec![
+                Markdown::Heading(2, vec![
+                    MarkdownInline::Plaintext("foo", None), 
+                    MarkdownInline::Italic("bar", None),
+                ], None),
+            ]))
+        );
+        assert_eq!(parse_markdown("## foo*bar*
+Paragraph trial"),
+            Ok(("", vec![
+                Markdown::Heading(2, vec![
+                    MarkdownInline::Plaintext("foo", None), 
+                    MarkdownInline::Italic("bar", None),
+                ], None),
+                Markdown::Line(vec![MarkdownInline::Plaintext("Paragraph trial", None)], None)
+            ]))
+        );
+        assert_eq!(parse_markdown("## foo*bar*
+Paragraph trial
+![alt text](https://placehold.it)
+![](https://placehold.it/200x200)
+"),
+            Ok(("", vec![
+                Markdown::Heading(2, vec![
+                    MarkdownInline::Plaintext("foo", None), 
+                    MarkdownInline::Italic("bar", None),
+                ], None),
+                Markdown::Line(vec![MarkdownInline::Plaintext("Paragraph trial", None)], None),
+                Markdown::Line(vec![MarkdownInline::Image("alt text", "https://placehold.it", None)], None),
+                Markdown::Line(vec![MarkdownInline::Image("", "https://placehold.it/200x200", None)], None)
+            ]))
+        );
+
+        assert_eq!(
+            parse_header("# The header"), 
+            Ok(("", (1, vec![MarkdownInline::Plaintext("The header", None)], None)))
+        )
     }
 
-//     #[test]
-//     fn test_parse_italics() {
-//         assert_eq!(
-//             parse_italics("*here is italic*"),
-//             Ok(("", ("here is italic", None)))
-//         );
 
-//         assert_eq!(
-//             parse_italics("*here is italic*{id=\"abc\"}"),
-//             Ok(
-//                 ("", ("here is italic", Some(HashMap::from([("id", "abc")]))))
-//             )
-//         );
+    #[test]
+    fn test_parse_markdown_document(){
+        let document = "# Article name from Example site
+## Current Category: BlaBla";
+        let result = parse_markdown(document);
+        println!("{result:?}")
+    }
 
-//         assert_eq!(
-//             parse_italics("*here is italic*{a=\"b\" c=\"d\"}"),
-//             Ok(
-//                 ("", ("here is italic", Some(HashMap::from([("a", "b"), ("c", "d")]))))
-//             )
-//         );
+    #[test]
+    fn test_parse_italics() {
+        // assert_eq!(
+        //     parse_markdown("*here is italic*"),
+        //     Ok(("", ("here is italic", None)))
+        // );
 
-//         // assert_eq!(
-//         //     parse_italics("*here is italic"),
-//         //     Err(NomErr::Error(Error {
-//         //         input: "",
-//         //         code: ErrorKind::Tag
-//         //     }))
-//         // );
+        // assert_eq!(
+        //     parse_italics("*here is italic*{id=\"abc\"}"),
+        //     Ok(
+        //         ("", ("here is italic", Some(HashMap::from([("id", "abc")]))))
+        //     )
+        // );
 
-//         // assert_eq!(
-//         //     parse_italics("here is italic*"),
-//         //     Err(NomErr::Error(Error {
-//         //         input: "here is italic*",
-//         //         code: ErrorKind::Tag,
-//         //     }))
-//         // );
-//         // assert_eq!(
-//         //     parse_italics("here is italic"),
-//         //     Err(NomErr::Error(Error {
-//         //         input: "here is italic",
-//         //         code: ErrorKind::Tag
-//         //     }))
-//         // );
-//         // assert_eq!(
-//         //     parse_italics("*"),
-//         //     Err(NomErr::Error(Error {
-//         //         input: "",
-//         //         code: ErrorKind::IsNot
-//         //     }))
-//         // );
-//         // assert_eq!(
-//         //     parse_italics("**"),
-//         //     Err(NomErr::Error(Error {
-//         //         input: "*",
-//         //         code: ErrorKind::IsNot
-//         //     }))
-//         // );
-//         // assert_eq!(
-//         //     parse_italics(""),
-//         //     Err(NomErr::Error(Error {
-//         //         input: "",
-//         //         code: ErrorKind::Tag
-//         //     }))
-//         // );
-//         // assert_eq!(
-//         //     parse_italics("**we are doing bold**"),
-//         //     Err(NomErr::Error(Error {
-//         //         input: "*we are doing bold**",
-//         //         code: ErrorKind::IsNot
-//         //     }))
-//         // );
-//     }
+        // assert_eq!(
+        //     parse_italics("*here is italic*{a=\"b\" c=\"d\"}"),
+        //     Ok(
+        //         ("", ("here is italic", Some(HashMap::from([("a", "b"), ("c", "d")]))))
+        //     )
+        // );
+
+        // assert_eq!(
+        //     parse_italics("*here is italic"),
+        //     Err(NomErr::Error(Error {
+        //         input: "",
+        //         code: ErrorKind::Tag
+        //     }))
+        // );
+
+        // assert_eq!(
+        //     parse_italics("here is italic*"),
+        //     Err(NomErr::Error(Error {
+        //         input: "here is italic*",
+        //         code: ErrorKind::Tag,
+        //     }))
+        // );
+        // assert_eq!(
+        //     parse_italics("here is italic"),
+        //     Err(NomErr::Error(Error {
+        //         input: "here is italic",
+        //         code: ErrorKind::Tag
+        //     }))
+        // );
+        // assert_eq!(
+        //     parse_italics("*"),
+        //     Err(NomErr::Error(Error {
+        //         input: "",
+        //         code: ErrorKind::IsNot
+        //     }))
+        // );
+        // assert_eq!(
+        //     parse_italics("**"),
+        //     Err(NomErr::Error(Error {
+        //         input: "*",
+        //         code: ErrorKind::IsNot
+        //     }))
+        // );
+        // assert_eq!(
+        //     parse_italics(""),
+        //     Err(NomErr::Error(Error {
+        //         input: "",
+        //         code: ErrorKind::Tag
+        //     }))
+        // );
+        // assert_eq!(
+        //     parse_italics("**we are doing bold**"),
+        //     Err(NomErr::Error(Error {
+        //         input: "*we are doing bold**",
+        //         code: ErrorKind::IsNot
+        //     }))
+        // );
+    }
 
 //     #[test]
 //     fn test_parse_boldtext() {
@@ -533,20 +625,24 @@ mod tests {
 //         );
 //     }
 
-//     #[test]
-//     fn test_parse_image() {
-//         assert_eq!(
-//             parse_image("![alt text](image.jpg)"),
-//             Ok(("", ("alt text", "image.jpg")))
-//         );
-//         assert_eq!(
-//             parse_inline_code(""),
-//             Err(NomErr::Error(Error {
-//                 input: "",
-//                 code: ErrorKind::Tag
-//             }))
-//         );
-//     }
+    #[test]
+    fn test_parse_image() {
+        assert_eq!(
+            parse_image("![alt text](image.jpg)"),
+            Ok(("", ("alt text", "image.jpg", None)))
+        );
+        assert_eq!(
+            parse_image("![](image.jpg)"),
+            Ok(("", ("", "image.jpg", None)))
+        );
+        // assert_eq!(
+        //     parse_inline_code(""),
+        //     Err(NomErr::Error(Error {
+        //         input: "",
+        //         code: ErrorKind::Tag
+        //     }))
+        // );
+    }
 
 //     #[test]
 //     fn test_parse_plaintext() {
