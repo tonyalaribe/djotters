@@ -12,7 +12,7 @@ pub fn translate(md: Vec<Markdown>) -> String {
                 translate_codeblock(lang, code, attr)
             }
             Markdown::Line(line, attr) => translate_line(line.to_vec(), attr),
-            Markdown::LineBreak => "<br/>".into(),
+            Markdown::LineBreak => "\n".into(),
         })
         .collect::<Vec<String>>()
         .join("")
@@ -29,8 +29,7 @@ fn translate_attributes(opt: &MarkdownAttributes) -> String {
 
 fn translate_to_element(el: &str, child: &str, attrs: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attrs);
-    let child_escaped = html_escape::encode_text(child);
-    format!("<{el}{attr_txt}>{child_escaped}</{el}>")
+    format!("<{el}{attr_txt}>{child}</{el}>")
 }
 
 
@@ -90,8 +89,8 @@ fn translate_text(text: MarkdownText) -> String {
             MarkdownInline::InlineCode(code, attr) => translate_to_element("code", code, attr),
             MarkdownInline::Link(text, url, attr) => translate_link(text, url, attr),
             MarkdownInline::Image(text, url, attr) => translate_image(text, url, attr),
-            MarkdownInline::Plaintext(text, attr) => html_escape::encode_text(text).to_string(),
-            MarkdownInline::LineBreak => todo!(),
+            MarkdownInline::Plaintext(text, attr) => text.to_string(),
+            MarkdownInline::LineBreak => "\n".into(),
         })
         .collect::<Vec<String>>()
         .join("")
