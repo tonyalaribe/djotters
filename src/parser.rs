@@ -512,6 +512,19 @@ Paragraph trial![]\n(https://placehold.it/200x200)
     }
 
     #[test]
+    fn test_parse_markdown_document2(){
+        let document = "# Article name from Example site
+## Current Category: BlaBla
+<div>
+    # subject
+</div>
+
+";
+        let result = parse_markdown(document);
+        println!("{result:?}")
+    }
+
+    #[test]
     fn test_parse_italics() {
         // assert_eq!(
         //     parse_markdown("*here is italic*"),

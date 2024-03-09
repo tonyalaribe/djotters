@@ -96,44 +96,44 @@ fn translate_text(text: MarkdownText) -> String {
         .join("")
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn test_translate_boldtext() {
-//         assert_eq!(
-//             translate_boldtext(String::from("bold af")),
-//             String::from("<b>bold af</b>")
-//         );
-//     }
+    #[test]
+    fn test_translate_boldtext() {
+        assert_eq!(
+            translate_text(vec![MarkdownInline::Bold("bold af",None)]),
+            String::from("<strong>bold af</strong>")
+        );
+    }
 
-//     #[test]
-//     fn test_translate_italic() {
-//         assert_eq!(
-//             translate_italic(String::from("italic af")),
-//             String::from("<em>italic af</em>")
-//         );
-//     }
+    #[test]
+    fn test_translate_italic() {
+        assert_eq!(
+            translate_text(vec![MarkdownInline::Italic("italic af", None)]),
+            String::from("<em>italic af</em>")
+        );
+    }
 
-//     #[test]
-//     fn test_translate_inline_code() {
-//         assert_eq!(
-//             translate_inline_code(String::from("code af")),
-//             String::from("<code>code af</code>")
-//         );
-//     }
+    #[test]
+    fn test_translate_inline_code() {
+        assert_eq!(
+            translate_text(vec![MarkdownInline::InlineCode("code af", None)]),
+            String::from("<code>code af</code>")
+        );
+    }
 
-//     #[test]
-//     fn test_translate_link() {
-//         assert_eq!(
-//             translate_link(
-//                 String::from("click me!"),
-//                 String::from("https://github.com")
-//             ),
-//             String::from("<a href=\"https://github.com\">click me!</a>")
-//         );
-//     }
+    // #[test]
+    // fn test_translate_link() {
+    //     assert_eq!(
+    //         translate_link(
+    //             String::from("click me!"),
+    //             String::from("https://github.com")
+    //         ),
+    //         String::from("<a href=\"https://github.com\">click me!</a>")
+    //     );
+    // }
 
 //     #[test]
 //     fn test_translate_image() {
@@ -247,4 +247,4 @@ fn translate_text(text: MarkdownText) -> String {
 //             String::from("<p>Foobar<b>Foobar</b><em>Foobar</em><code>Foobar</code></p>")
 //         );
 //     }
-// }
+}
