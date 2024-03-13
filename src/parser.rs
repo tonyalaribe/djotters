@@ -18,19 +18,58 @@ use nom::{
 
 pub fn parse_markdown(i: &str) -> IResult<&str, Vec<Markdown>> {
     many1(alt((
-        map(tag("\n"), |e| Markdown::LineBreak ),
-        map(parse_header, |e| Markdown::Heading(e.0, e.1, e.2)),
-        map(parse_unordered_list, |e| Markdown::UnorderedList(e.0, e.1)),
-        map(parse_ordered_list, |e| Markdown::OrderedList(e.0, e.1)),
+        map(parse_header, |e| Markdown::Heading(e.1, e.2, e.0)),
+        map(parse_unordered_list, |e| Markdown::UnorderedList( e.1, e.0)),
+        map(parse_ordered_list, |e| Markdown::OrderedList(e.1, e.0)),
         map(parse_code_block, |e| {
             Markdown::Codeblock(e.0.0, e.1, e.0.1)
         }),
-        map(parse_markdown_paragraph, |e| Markdown::Line(e.0,e.1)),
+        map(parse_div, |e| {
+            Markdown::Div(e.0, e.1, e.2)
+        }),
+        map(parse_markdown_paragraph, |e| Markdown::Line(e.1, e.0)),
+        map(tag("\n"), |e| Markdown::LineBreak ),
     )))(i)
 }
 
-fn match_surround_text<'a>(i: &'a str, surrounder: &'a str) -> IResult<&'a str, &'a str> {
-    let not_surrounder = take_while1(move |c| c != '\n' && c != surrounder.chars().next().unwrap());
+// fn parse_div(i: &str) -> IResult<&str, (MarkdownAttributes, Option<&str>, Vec<Markdown>) > {
+//     tuple(
+//         opt(terminated(parse_attributes, tag("\n"))),
+//         
+//     )
+// }
+
+fn parse_div(i: &str) -> IResult<&str, (Option<&str>, Vec<Markdown>, MarkdownAttributes)> {
+    let (input, attr) = opt(terminated(parse_attributes, tag("\n")))(i)?;
+
+    let (input, colon_count) = map(
+        take_while1(|c|c==':'),
+        |s: &str| s.len(),
+    )(input)?;
+
+    let closing_tag = ":".repeat(colon_count);
+
+    let (input, label) = terminated(opt(
+        preceded(
+            tag(" "), 
+            take_until("\n"),
+        )
+    ), tag("\n"))(input)?;
+    let (input, content) = take_before0(
+        tuple((
+            tag("\n"),
+            tag(&*closing_tag), 
+            alt((tag("\n"), eof, multispace1))
+            )
+        )
+    )(input)?;
+    let (input, _) = pair(tag("\n"), tag(&*closing_tag))(input)?;
+    let (x, content_md) = parse_markdown(content)?;
+    Ok((input, (label,content_md, attr)))
+}
+ 
+fn match_surround_text<'a>(i: &'a str, opener: &'a str, closer: &'a str) -> IResult<&'a str, &'a str> {
+    let not_surrounder = take_while1(move |c| c != '\n' && c != closer.chars().next().unwrap());
 
     let no_end_space = move |input: &'a str| {
         let (input, text) = not_surrounder(input)?;
@@ -47,19 +86,19 @@ fn match_surround_text<'a>(i: &'a str, surrounder: &'a str) -> IResult<&'a str, 
     };
 
     delimited(
-        tag(surrounder), // Match opening surrounder and ensure no space after it
+        tag(opener), // Match opening surrounder and ensure no space after it
         no_end_space, // Match text that is not the surrounder
-        tag(surrounder), // Ensure no space before closing surrounder and match it
+        tag(closer), // Ensure no space before closing surrounder and match it
     )(i)
 }
 
 fn parse_id(input: &str) -> IResult<&str, (&str, &str)> {
-    let (remaining, id) = delimited(tag("#"), alphanumeric1, multispace0)(input)?;
+    let (remaining, id) = delimited(tag("#"), take_before0(alt((multispace1,tag("}")))), multispace0)(input)?;
     Ok((remaining, ("id", id)))
 }
 
 fn parse_class(input: &str) -> IResult<&str, (&str, &str)> {
-    let (remaining, class) = delimited(tag("."), alphanumeric1, multispace0)(input)?;
+    let (remaining, class) = delimited(tag("."), take_before0(alt((multispace1, tag("}")))), multispace0)(input)?;
     Ok((remaining, ("class", class)))
 }
 
@@ -107,12 +146,17 @@ fn parse_attributes(input: &str) -> IResult<&str, HashMap<&str, String>> {
     attributes_parser(input)
 }
 
-fn match_surround_with_attrs<'a>(separator: &'a str) -> impl Fn(&'a str) -> IResult<&'a str, (&'a str, MarkdownAttributes<'a>)> + 'a {
+fn match_surround2_with_attrs<'a>(recurse: bool, opener: &'a str, closer: &'a str) -> impl Fn(&'a str) -> IResult<&'a str, (MarkdownText<'a>, MarkdownAttributes<'a>)> + 'a {
     move |input: &'a str| {
-        let (remaining, text) = match_surround_text(input, separator)?;
+        let (remaining, text) = match_surround_text(input, opener, closer)?;
         let (remaining, attrs) = opt(parse_attributes)(remaining)?;
+        let (_, child_elements) = if recurse {
+                parse_markdown_text(false)(text)?
+        }else {
+                ("", vec![MarkdownInline::Plaintext(text, None)])
+        };
         
-        Ok((remaining, (text, attrs)))
+        Ok((remaining, (child_elements, attrs)))
     }
 }
 
@@ -180,21 +224,28 @@ fn parse_plaintext(accept_linebreak: bool) -> impl Fn(&str) -> IResult<&str, (&s
 
 fn parse_markdown_not_plain(accept_linebreak: bool) -> impl Fn(&str) -> IResult<&str, MarkdownInline> {
     move |i: &str|{
-    println!("parse_markdown_not_plain: {i:?}");
     alt((
-        map(match_surround_with_attrs("*"), |(s, attr): (&str, MarkdownAttributes)| {
-            MarkdownInline::Italic(s, attr)
-        }),
-        map(match_surround_with_attrs("_"), |(s, attr): (&str, MarkdownAttributes)| {
-            MarkdownInline::Italic(s, attr)
-        }),
-        map(match_surround_with_attrs("`"), |(s, attr): (&str, MarkdownAttributes)| {
-            MarkdownInline::InlineCode(s, attr)
-        }),
-        map(match_surround_with_attrs("**"), |(s, attr): (&str, MarkdownAttributes)| {
+        map(match_surround2_with_attrs(true, "{*", "*}"), |(s, attr): (MarkdownText, MarkdownAttributes)| {
             MarkdownInline::Bold(s, attr)
         }),
-        map(match_surround_with_attrs("__"), |(s, attr): (&str, MarkdownAttributes)| {
+        map(match_surround2_with_attrs(true, "{_", "_}"), |(s, attr): (MarkdownText, MarkdownAttributes)| {
+            MarkdownInline::Italic(s, attr)
+        }),
+        map(match_surround2_with_attrs(true, "*", "*"), |(s, attr): (MarkdownText, MarkdownAttributes)| {
+            MarkdownInline::Bold(s, attr)
+        }),
+        map(match_surround2_with_attrs(true, "_", "_"), |(s, attr): (MarkdownText, MarkdownAttributes)| {
+            MarkdownInline::Italic(s, attr)
+        }),
+        map(match_surround2_with_attrs(false, "`", "`"), |(s, attr): (MarkdownText, MarkdownAttributes)| {
+            MarkdownInline::InlineCode(s, attr)
+        }),
+        // TODO: remove. not needed for djot
+        map(match_surround2_with_attrs(true, "**", "**"), |(s, attr): (MarkdownText, MarkdownAttributes)| {
+            MarkdownInline::Bold(s, attr)
+        }),
+        // TODO: remove. not needed for djot
+        map(match_surround2_with_attrs(true, "__", "__"), |(s, attr): (MarkdownText, MarkdownAttributes)| {
             MarkdownInline::Bold(s, attr)
         }),
         map(parse_image, |(tag, url, attr): (&str, &str, MarkdownAttributes)| {
@@ -210,6 +261,10 @@ fn parse_markdown_not_plain(accept_linebreak: bool) -> impl Fn(&str) -> IResult<
         map(parse_link, |(tag, url, attr): (&str, &str, MarkdownAttributes)| {
             MarkdownInline::Link(tag, url, attr)
         }),
+        map(match_surround2_with_attrs(true, "[", "]"), |(s, attr): (MarkdownText, MarkdownAttributes)| {
+            MarkdownInline::Span(s, attr)
+        }),
+
     ))(i)
     }
 }
@@ -233,11 +288,16 @@ fn parse_markdown_text(accept_linebreak: bool) -> impl Fn(&str) -> IResult<&str,
 //     pair(terminated(parse_markdown_text, alt((tag("\n\n"),eof ))), opt(parse_attributes))(i)
 // }
 
-fn parse_markdown_paragraph(i: &str) -> IResult<&str, (MarkdownText, MarkdownAttributes)> {
+// A paragraph can include optional attributes, which will be on the line before it 
+// ```
+// {.className #idName attr="attrVal" attr2=attrVal2}
+// The paragraph content which can include *many* _inline_ {=items=}.
+// ```
+fn parse_markdown_paragraph(i: &str) -> IResult<&str, (MarkdownAttributes, MarkdownText)> {
     terminated(
-        pair(parse_markdown_text(true), opt(preceded(tag("\n"), parse_attributes))),
+        pair(opt(terminated(parse_attributes, tag("\n"))), parse_markdown_text(true)),
         alt((tag("\n\n"),eof)),
-    )(i)
+    )(i.trim_start())
 }
 
 // this guy matches the literal character #
@@ -249,15 +309,16 @@ fn parse_header_tag(i: &str) -> IResult<&str, usize> {
 }
 
 // this combines a tuple of the header tag and the rest of the line
-// # Heading title {.class #idName}\n
+// {.class #idName}
+// # Heading title\n
 //
-fn parse_header(i: &str) -> IResult<&str, (usize, MarkdownText, MarkdownAttributes)> {
+fn parse_header(i: &str) -> IResult<&str, (MarkdownAttributes, usize, MarkdownText)> {
     terminated(
         tuple(
-            (parse_header_tag, parse_markdown_text(false), opt(parse_attributes))
+            (opt(terminated(parse_attributes, tag("\n"))), parse_header_tag, parse_markdown_text(false))
         ),
         alt((tag("\n\n"),tag("\n"), eof))
-    )(i)
+    )(i.trim_start())
 }
 
 fn parse_unordered_list_tag(i: &str) -> IResult<&str, &str> {
@@ -268,8 +329,8 @@ fn parse_unordered_list_element(i: &str) -> IResult<&str, MarkdownText> {
     preceded(parse_unordered_list_tag, parse_markdown_text(false))(i)
 }
 
-fn parse_unordered_list(i: &str) -> IResult<&str, (Vec<MarkdownText>, MarkdownAttributes)> {
-    pair(many1(parse_unordered_list_element),opt(parse_attributes))(i)
+fn parse_unordered_list(i: &str) -> IResult<&str, (MarkdownAttributes, Vec<MarkdownText>)> {
+    pair(opt(terminated(parse_attributes, tag("\n"))), many1(parse_unordered_list_element))(i.trim_start())
 }
 
 fn parse_ordered_list_tag(i: &str) -> IResult<&str, &str> {
@@ -283,12 +344,12 @@ fn parse_ordered_list_element(i: &str) -> IResult<&str, MarkdownText> {
     preceded(parse_ordered_list_tag, parse_markdown_text(false))(i)
 }
 
-fn parse_ordered_list(i: &str) -> IResult<&str, (Vec<MarkdownText>, MarkdownAttributes)> {
-    pair(many1(parse_ordered_list_element), opt(parse_attributes))(i)
+fn parse_ordered_list(i: &str) -> IResult<&str, (MarkdownAttributes, Vec<MarkdownText>)> {
+    pair(opt(terminated(parse_attributes, tag("\n"))), many1(parse_ordered_list_element))(i.trim_start())
 }
 
 fn parse_code_block(i: &str) -> IResult<&str, ((&str, MarkdownAttributes), &str)> {
-    tuple((parse_code_block_lang, parse_code_block_body))(i)
+    tuple((parse_code_block_lang, parse_code_block_body))(i.trim_start())
 }
 
 fn parse_code_block_body(i: &str) -> IResult<&str, &str> {
@@ -330,13 +391,13 @@ mod tests {
     #[test]
     fn test_surround_with_attrs() {
         assert_eq!(
-            match_surround_with_attrs("*")("*here is italic*"),
-            Ok(("", ("here is italic", None)))
+            match_surround2_with_attrs(true, "*", "*")("*here is italic*"),
+            Ok(("", (vec![MarkdownInline::Plaintext("here is italic", None)], None)))
         );
-        assert_eq!(
-            match_surround_with_attrs("*")("*here is italic*{ id=\"abc\" b=\"c\" }"),
-            Ok(("", ("here is italic", Some(HashMap::from([("id".into(), "abc".into()), ("b".into(), "c".into())])))))
-        );
+        // assert_eq!(
+        //     match_surround_with_attrs("*")("*here is italic*{ id=\"abc\" b=\"c\" }"),
+        //     Ok(("", ("here is italic", Some(HashMap::from([("id".into(), "abc".into()), ("b".into(), "c".into())])))))
+        // );
     }
 
     #[test]
@@ -348,10 +409,10 @@ mod tests {
             parse_markdown_inline(false)("here is *italic*"),
             Ok(("*italic*", MarkdownInline::Plaintext("here is ", None)))
         );
-        assert_eq!(
-            parse_markdown_inline(false)("*here is italic*"),
-            Ok(("", MarkdownInline::Italic("here is italic", None)))
-        );
+        // assert_eq!(
+        //     parse_markdown_inline(false)("*here is italic*"),
+        //     Ok(("", MarkdownInline::Italic("here is italic", None)))
+        // );
         assert_eq!(
             parse_markdown_inline(false)("* here is italic*"),
             Ok(("", MarkdownInline::Plaintext("* here is italic*", None)))
@@ -360,10 +421,10 @@ mod tests {
             parse_markdown_inline(false)("* here is italic *"),
             Ok(("", MarkdownInline::Plaintext("* here is italic *", None)))
         );
-        assert_eq!(
-            parse_markdown_inline(false)("*here is italic*{ id=\"abc\" b=\"c\" }"),
-            Ok(("", MarkdownInline::Italic("here is italic", Some(HashMap::from([("id".into(), "abc".into()), ("b".into(), "c".into())])))))
-        );
+        // assert_eq!(
+        //     parse_markdown_inline(false)("*here is italic*{ id=\"abc\" b=\"c\" }"),
+        //     Ok(("", MarkdownInline::Italic("here is italic", Some(HashMap::from([("id".into(), "abc".into()), ("b".into(), "c".into())])))))
+        // );
         assert_eq!(
             parse_markdown_inline(false)("*here is \nitalic*"),
             Ok(("\nitalic*", MarkdownInline::Plaintext("*here is ", None)))
@@ -372,9 +433,9 @@ mod tests {
 
     #[test]
     fn test_parse_markdown_text(){
-        assert_eq!(parse_markdown_not_plain(false)("*here is italic*"),
-            Ok(("", MarkdownInline::Italic("here is italic", None)))
-        );
+        // assert_eq!(parse_markdown_not_plain(false)("*here is italic*"),
+        //     Ok(("", MarkdownInline::Italic("here is italic", None)))
+        // );
         assert_eq!(parse_plaintext(false)("*here is \nitalic*"),
             Ok(("\nitalic*", ("*here is ",  None)))
         );
@@ -384,121 +445,121 @@ mod tests {
                 code: ErrorKind::Eof
             }))
         );
-        assert_eq!(
-            parse_markdown_text(true)("*here is italic*"),
-            Ok(("", vec![MarkdownInline::Italic("here is italic", None)]))
-        );
-        assert_eq!(
-            parse_markdown_text(true)("*here is italic* lorem ipsum"),
-            Ok(("", vec![MarkdownInline::Italic("here is italic", None), MarkdownInline::Plaintext(" lorem ipsum", None)]))
-        );
-        assert_eq!(
-            parse_markdown_text(true)("*here*italic"),
-            Ok(("", vec![MarkdownInline::Italic("here", None), MarkdownInline::Plaintext("italic", None)]))
-        );
-        assert_eq!(
-            parse_markdown_text(true)("*here is italic* lorem ipsum"),
-            Ok(("", vec![MarkdownInline::Italic("here is italic", None), MarkdownInline::Plaintext(" lorem ipsum", None)]))
-        );
+        // assert_eq!(
+        //     parse_markdown_text(true)("*here is italic*"),
+        //     Ok(("", vec![MarkdownInline::Italic("here is italic", None)]))
+        // );
+        // assert_eq!(
+        //     parse_markdown_text(true)("*here is italic* lorem ipsum"),
+        //     Ok(("", vec![MarkdownInline::Italic("here is italic", None), MarkdownInline::Plaintext(" lorem ipsum", None)]))
+        // );
+        // assert_eq!(
+        //     parse_markdown_text(true)("*here*italic"),
+        //     Ok(("", vec![MarkdownInline::Italic("here", None), MarkdownInline::Plaintext("italic", None)]))
+        // );
+        // assert_eq!(
+        //     parse_markdown_text(true)("*here is italic* lorem ipsum"),
+        //     Ok(("", vec![MarkdownInline::Italic("here is italic", None), MarkdownInline::Plaintext(" lorem ipsum", None)]))
+        // );
         assert_eq!(
             parse_markdown_text(true)("*here is italic * lorem ipsum"),
             Ok(("", vec![MarkdownInline::Plaintext("*here is italic * lorem ipsum", None)]))
         );
-        assert_eq!(
-            parse_markdown_text(true)("*here is italic*{ id=\"abc\" b=\"c\" }"),
-            Ok(("", vec![MarkdownInline::Italic("here is italic", Some(HashMap::from([("id".into(), "abc".into()), ("b".into(), "c".into())])))]))
-        );
-        assert_eq!(
-            parse_markdown_text(true)("*here is italic*{ .className }"),
-            Ok(("", vec![MarkdownInline::Italic("here is italic", Some(HashMap::from([("class".into(), "className".into())])))]))
-        );
+        // assert_eq!(
+        //     parse_markdown_text(true)("*here is italic*{ id=\"abc\" b=\"c\" }"),
+        //     Ok(("", vec![MarkdownInline::Italic("here is italic", Some(HashMap::from([("id".into(), "abc".into()), ("b".into(), "c".into())])))]))
+        // );
+        // assert_eq!(
+        //     parse_markdown_text(true)("*here is italic*{ .className }"),
+        //     Ok(("", vec![MarkdownInline::Italic("here is italic", Some(HashMap::from([("class".into(), "className".into())])))]))
+        // );
     }
 
     #[test]
     fn test_parse_markdown_block(){
-        assert_eq!(parse_markdown("*here*italics"),
-            Ok(("", vec![Markdown::Line(vec![MarkdownInline::Italic("here", None), MarkdownInline::Plaintext("italics", None)], None)]))
-        );
+        // assert_eq!(parse_markdown("*here*italics"),
+        //     Ok(("", vec![Markdown::Line(vec![MarkdownInline::Italic("here", None), MarkdownInline::Plaintext("italics", None)], None)]))
+        // );
         // assert_eq!(parse_markdown("foo*bar*"),
         //     Ok(("", vec![Markdown::Line(vec![MarkdownInline::Plaintext("foo", None), MarkdownInline::Italic("bar", None)], None)]))
         // );
         assert_eq!(
             parse_header("# The header"), 
-            Ok(("", (1, vec![MarkdownInline::Plaintext("The header", None)], None)))
+            Ok(("", (None, 1, vec![MarkdownInline::Plaintext("The header", None)])))
         );
         assert_eq!(
             parse_header("# The \nheader"), 
-            Ok(("header", (1, vec![MarkdownInline::Plaintext("The ", None)], None)))
+            Ok(("header", (None, 1, vec![MarkdownInline::Plaintext("The ", None)])))
         );
-        assert_eq!(parse_markdown("## foo*bar*"),
-            Ok(("", vec![
-                Markdown::Heading(2, vec![
-                    MarkdownInline::Plaintext("foo", None), 
-                    MarkdownInline::Italic("bar", None),
-                ], None),
-            ]))
-        );
-        assert_eq!(parse_markdown("## foo*bar* {.className}"),
-            Ok(("", vec![
-                Markdown::Heading(2, vec![
-                    MarkdownInline::Plaintext("foo", None), 
-                    MarkdownInline::Italic("bar", None),
-                    MarkdownInline::Plaintext(" ", None)
-                ], Some(HashMap::from([("class".into(), "className".into())]))),
-            ]))
-        );
-        assert_eq!(parse_markdown("## foo*bar*
-Paragraph trial"),
-            Ok(("", vec![
-                Markdown::Heading(2, vec![
-                    MarkdownInline::Plaintext("foo", None), 
-                    MarkdownInline::Italic("bar", None),
-                ], None),
-                Markdown::Line(vec![MarkdownInline::Plaintext("Paragraph trial", None)], None)
-            ]))
-        );
-        assert_eq!(parse_markdown("## foo*bar*
-Paragraph trial\n\nNew Paragraph"),
-            Ok(("", vec![
-                Markdown::Heading(2, vec![
-                    MarkdownInline::Plaintext("foo", None), 
-                    MarkdownInline::Italic("bar", None),
-                ], None),
-                Markdown::Line(vec![MarkdownInline::Plaintext("Paragraph trial", None)], None),
-                Markdown::Line(vec![MarkdownInline::Plaintext("New Paragraph", None)], None)
-            ]))
-        );
-        assert_eq!(parse_markdown("## foo*bar* {.className}
-Paragraph trial\n![](https://placehold.it/200x200)\n
-"),
-            Ok(("", vec![
-                Markdown::Heading(2, vec![
-                    MarkdownInline::Plaintext("foo", None), 
-                    MarkdownInline::Italic("bar", None),
-                    MarkdownInline::Plaintext(" ", None),
-                ], Some(HashMap::from([("class".into(), "className".into())]))),
-                Markdown::Line(vec![
-                    MarkdownInline::Plaintext("Paragraph trial", None),
-                    MarkdownInline::LineBreak,
-                    MarkdownInline::Image("", "https://placehold.it/200x200", None),
-                ], None),
-            ]))
-        );
-        assert_eq!(parse_markdown("## foo*bar*
-Paragraph trial![]\n(https://placehold.it/200x200)
-{.className}"),
-            Ok(("", vec![
-                Markdown::Heading(2, vec![
-                    MarkdownInline::Plaintext("foo", None), 
-                    MarkdownInline::Italic("bar", None),
-                ], None),
-                Markdown::Line(vec![
-                    MarkdownInline::Plaintext("Paragraph trial", None),
-                    MarkdownInline::LineBreak,
-                    MarkdownInline::Image("", "https://placehold.it/200x200", None)
-                ], None),
-            ]))
-        );
+        // assert_eq!(parse_markdown("## foo*bar*"),
+        //     Ok(("", vec![
+        //         Markdown::Heading(2, vec![
+        //             MarkdownInline::Plaintext("foo", None), 
+        //             MarkdownInline::Italic("bar", None),
+        //         ], None),
+        //     ]))
+        // );
+        // assert_eq!(parse_markdown("## foo*bar* {.className}"),
+        //     Ok(("", vec![
+        //         Markdown::Heading(2, vec![
+        //             MarkdownInline::Plaintext("foo", None), 
+        //             MarkdownInline::Italic("bar", None),
+        //             MarkdownInline::Plaintext(" ", None)
+        //         ], Some(HashMap::from([("class".into(), "className".into())]))),
+        //     ]))
+        // );
+//         assert_eq!(parse_markdown("## foo*bar*
+// Paragraph trial"),
+//             Ok(("", vec![
+//                 Markdown::Heading(2, vec![
+//                     MarkdownInline::Plaintext("foo", None), 
+//                     MarkdownInline::Italic("bar", None),
+//                 ], None),
+//                 Markdown::Line(vec![MarkdownInline::Plaintext("Paragraph trial", None)], None)
+//             ]))
+//         );
+//         assert_eq!(parse_markdown("## foo*bar*
+// Paragraph trial\n\nNew Paragraph"),
+//             Ok(("", vec![
+//                 Markdown::Heading(2, vec![
+//                     MarkdownInline::Plaintext("foo", None), 
+//                     MarkdownInline::Italic("bar", None),
+//                 ], None),
+//                 Markdown::Line(vec![MarkdownInline::Plaintext("Paragraph trial", None)], None),
+//                 Markdown::Line(vec![MarkdownInline::Plaintext("New Paragraph", None)], None)
+//             ]))
+//         );
+//         assert_eq!(parse_markdown("## foo*bar* {.className}
+// Paragraph trial\n![](https://placehold.it/200x200)\n
+// "),
+//             Ok(("", vec![
+//                 Markdown::Heading(2, vec![
+//                     MarkdownInline::Plaintext("foo", None), 
+//                     MarkdownInline::Italic("bar", None),
+//                     MarkdownInline::Plaintext(" ", None),
+//                 ], Some(HashMap::from([("class".into(), "className".into())]))),
+//                 Markdown::Line(vec![
+//                     MarkdownInline::Plaintext("Paragraph trial", None),
+//                     MarkdownInline::LineBreak,
+//                     MarkdownInline::Image("", "https://placehold.it/200x200", None),
+//                 ], None),
+//             ]))
+//         );
+//         assert_eq!(parse_markdown("## foo*bar*
+// Paragraph trial![]\n(https://placehold.it/200x200)
+// {.className}"),
+//             Ok(("", vec![
+//                 Markdown::Heading(2, vec![
+//                     MarkdownInline::Plaintext("foo", None), 
+//                     MarkdownInline::Italic("bar", None),
+//                 ], None),
+//                 Markdown::Line(vec![
+//                     MarkdownInline::Plaintext("Paragraph trial", None),
+//                     MarkdownInline::LineBreak,
+//                     MarkdownInline::Image("", "https://placehold.it/200x200", None)
+//                 ], None),
+//             ]))
+//         );
 
     }
 

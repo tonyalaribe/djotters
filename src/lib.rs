@@ -1,3 +1,5 @@
+#![feature(pattern)]
+
 use std::collections::HashMap;
 
 pub mod parser;
@@ -19,6 +21,7 @@ pub enum Markdown<'a> {
     UnorderedList(Vec<MarkdownText<'a>>, MarkdownAttributes<'a>),
     Line(MarkdownText<'a>, MarkdownAttributes<'a>),
     Codeblock(&'a str, &'a str, MarkdownAttributes<'a>),
+    Div(Option<&'a str>, Vec<Markdown<'a>>, MarkdownAttributes<'a>),
     LineBreak,
 }
 
@@ -26,9 +29,10 @@ pub enum Markdown<'a> {
 pub enum MarkdownInline<'a> {
     Link(&'a str, &'a str, MarkdownAttributes<'a>),
     Image(&'a str, &'a str, MarkdownAttributes<'a>),
-    InlineCode(&'a str, MarkdownAttributes<'a>),
-    Bold(&'a str, MarkdownAttributes<'a>),
-    Italic(&'a str, MarkdownAttributes<'a>),
+    InlineCode(MarkdownText<'a>, MarkdownAttributes<'a>),
+    Bold(MarkdownText<'a>, MarkdownAttributes<'a>),
+    Italic(MarkdownText<'a>, MarkdownAttributes<'a>),
+    Span(MarkdownText<'a>, MarkdownAttributes<'a>),
     Plaintext(&'a str, MarkdownAttributes<'a>), 
     LineBreak,
 }

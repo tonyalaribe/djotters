@@ -1,6 +1,13 @@
+use std::str::pattern::Pattern;
+
 use crate::{Markdown, MarkdownAttributes};
 use crate::MarkdownInline;
 use crate::MarkdownText;
+use itertools::Itertools; 
+use std::collections::HashMap;
+use crate::parser::parse_markdown;
+
+
 
 pub fn translate(md: Vec<Markdown>) -> String {
     md.iter()
@@ -12,15 +19,41 @@ pub fn translate(md: Vec<Markdown>) -> String {
                 translate_codeblock(lang, code, attr)
             }
             Markdown::Line(line, attr) => translate_line(line.to_vec(), attr),
+            Markdown::Div(title, content, attr) => translate_div(title, content, attr),
             Markdown::LineBreak => "\n".into(),
         })
         .collect::<Vec<String>>()
         .join("")
 }
 
+
+fn translate_div(title: &Option<&str>, content: &Vec<Markdown>, attr1:&MarkdownAttributes) -> String {
+    let mut attr = attr1.clone();
+    if let Some(t) = title {
+        if let Some(attributes) = &mut attr {
+            if let Some(val) = attributes.get_mut("class") {
+                *val = format!("{} {}", val, t);
+            } else {
+                attributes.insert("class", t.to_string());
+            }
+        } else {
+            let mut new_attr = HashMap::new();
+            new_attr.insert("class", t.to_string());
+            attr = Some(new_attr);
+        }
+    }
+
+    let attr_txt = translate_attributes(&attr); // Assuming this function takes a reference
+    let content_txt = translate(content.to_vec()); // Assuming this function consumes the Vec<Markdown>
+    
+    // Use format string directly without placeholder names for simplicity
+    format!("<div{}>{}</div>", attr_txt, content_txt)
+}
+
 fn translate_attributes(opt: &MarkdownAttributes) -> String {
     opt.as_ref().map_or(String::new(), |hash_map|
         hash_map.iter()
+            .sorted()
             .map(|(k, v)| format!(" {}=\"{}\"", k , v))
             .collect::<Vec<_>>()
             .join("")
@@ -40,7 +73,7 @@ fn translate_link(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
 
 fn translate_image(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attrs);
-    format!("<img src=\"{url}\" alt=\"{text}\" {attr_txt}/>\n", )
+    format!("<img alt=\"{text}\" src=\"{url}\"{attr_txt}/>", )
 }
 
 fn translate_list_elements(lines: Vec<MarkdownText>) -> String {
@@ -53,29 +86,40 @@ fn translate_list_elements(lines: Vec<MarkdownText>) -> String {
 
 fn translate_header(size: usize, text: MarkdownText, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
-    format!("<h{}{attr_txt}>{}</h{}>\n", size, translate_text(text), size)
+    format!("<h{}{attr_txt}>{}</h{}>", size, translate_text(text), size)
 }
 
 fn translate_unordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
-    format!("<ul{attr_txt}>{}</ul>\n", translate_list_elements(lines.to_vec()))
+    format!("<ul{attr_txt}>{}</ul>", translate_list_elements(lines.to_vec()))
 }
 
 fn translate_ordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
-    format!("<ol{attr_txt}>{}</ol>\n", translate_list_elements(lines.to_vec()))
+    format!("<ol{attr_txt}>{}</ol>", translate_list_elements(lines.to_vec()))
 }
 
 fn translate_codeblock(lang: &str, code: &str, attr: &MarkdownAttributes) -> String {
+    let trimmed_lang = lang.trim();
     let attr_txt = translate_attributes(attr);
-    format!("<pre><code class=\"lang-{}\"{attr_txt}>{}</code></pre>\n", lang, code)
+    if "=".is_prefix_of(trimmed_lang){
+        if "=html".is_prefix_of(trimmed_lang){
+            code.into()
+        }else{
+            // Hide all verbatim blocks which are not of type html. To allow blocks used in other
+            // media types like pdf or latex
+            "".into()
+        }
+    }else{
+        format!("<pre><code class=\"lang-{}\"{attr_txt}>{}</code></pre>", trimmed_lang, code)
+    }
 }
 
 fn translate_line(text: MarkdownText, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
     let line = translate_text(text);
     if line.len() > 0 {
-        format!("<p{attr_txt}>{}</p>\n", line)
+        format!("<p{attr_txt}>{}</p>", line)
     } else {
         format!("{}", line)
     }
@@ -84,13 +128,14 @@ fn translate_line(text: MarkdownText, attr: &MarkdownAttributes) -> String {
 fn translate_text(text: MarkdownText) -> String {
     text.iter()
         .map(|part| match part {
-            MarkdownInline::Bold(text, attr) => translate_to_element("strong", text, attr),
-            MarkdownInline::Italic(text, attr) => translate_to_element("em" ,text, attr),
-            MarkdownInline::InlineCode(code, attr) => translate_to_element("code", code, attr),
+            MarkdownInline::Bold(text, attr) => translate_to_element("strong", &translate_text(text.to_vec()), attr),
+            MarkdownInline::Italic(text, attr) => translate_to_element("em" ,&translate_text(text.to_vec()), attr),
+            MarkdownInline::InlineCode(code, attr) => translate_to_element("code", &translate_text(code.to_vec()), attr),
             MarkdownInline::Link(text, url, attr) => translate_link(text, url, attr),
             MarkdownInline::Image(text, url, attr) => translate_image(text, url, attr),
             MarkdownInline::Plaintext(text, attr) => text.to_string(),
             MarkdownInline::LineBreak => "\n".into(),
+            MarkdownInline::Span(text, attr) => translate_to_element("span", &translate_text(text.to_vec()), attr)
         })
         .collect::<Vec<String>>()
         .join("")
@@ -103,7 +148,7 @@ mod tests {
     #[test]
     fn test_translate_boldtext() {
         assert_eq!(
-            translate_text(vec![MarkdownInline::Bold("bold af",None)]),
+            translate_text(vec![MarkdownInline::Bold(vec![MarkdownInline::Plaintext("bold af", None)],None)]),
             String::from("<strong>bold af</strong>")
         );
     }
@@ -111,7 +156,7 @@ mod tests {
     #[test]
     fn test_translate_italic() {
         assert_eq!(
-            translate_text(vec![MarkdownInline::Italic("italic af", None)]),
+            translate_text(vec![MarkdownInline::Italic(vec![MarkdownInline::Plaintext("italic af", None)], None)]),
             String::from("<em>italic af</em>")
         );
     }
@@ -119,9 +164,137 @@ mod tests {
     #[test]
     fn test_translate_inline_code() {
         assert_eq!(
-            translate_text(vec![MarkdownInline::InlineCode("code af", None)]),
+            translate_text(vec![MarkdownInline::InlineCode(vec![MarkdownInline::Plaintext("code af", None)], None)]),
             String::from("<code>code af</code>")
         );
+    }
+
+    // Mostly examples from the djot spec
+    #[test]
+    fn test_e2e_precedence(){
+        let (_, md) = parse_markdown("_This is *regular_ not strong* emphasis").unwrap();
+        assert_eq!(translate(md), "<p><em>This is *regular</em> not strong* emphasis</p>");
+
+        let (_, md) = parse_markdown("*This is _strong* not regular_ emphasis").unwrap();
+        assert_eq!(translate(md), "<p><strong>This is _strong</strong> not regular_ emphasis</p>");
+
+        let (_, md) = parse_markdown("[Link *](url)*").unwrap();
+        assert_eq!(translate(md), "<p><a href=\"url\">Link *</a>*</p>");
+
+        let (_, md) = parse_markdown("*Emphasis [*](url)").unwrap();
+        assert_eq!(translate(md), "<p><strong>Emphasis [</strong>](url)</p>");
+
+        // We don't yet support nesting inline elements
+        // let (_, md) = parse_markdown(r#"_This is *strong within* regular emphasis_"#).unwrap();
+        // assert_eq!(translate(md), "<p><em>This is <strong>strong within</strong> regular emphasis</em></p>");
+
+        // Seems like _} is treated as a special case, and _ doesn't trigger an emphasis
+        // let (_, md) = parse_markdown("{_Emphasized_}\n_}not emphasized{_").unwrap();
+        // assert_eq!(translate(md), "<p><em>Emphasized</em>\n_}not emphasized{_</p>");
+        //
+        
+        let (_, md) = parse_markdown("[My link text](http://example.com)").unwrap();
+        assert_eq!(translate(md), "<p><a href=\"http://example.com\">My link text</a></p>");
+
+        // It should be possible to split the link accross multiple lines and the newline should be
+        // ignored
+        // let (_, md) = parse_markdown("[My link text](http://example.com?\nproduct_number=234234234234\n234234234234)").unwrap();
+        // assert_eq!(translate(md), "<p><a href=\"http://example.com?product_number=234234234234234234234234\">My link text</a></p>\n");
+
+        let (_, md) = parse_markdown(r#"![picture of a cat](cat.jpg)"#).unwrap();
+        assert_eq!(translate(md), "<p><img alt=\"picture of a cat\" src=\"cat.jpg\"/></p>");
+
+        let (_, md) = parse_markdown("_emphasized text_").unwrap();
+        assert_eq!(translate(md), "<p><em>emphasized text</em></p>");
+
+
+        let (_, md) = parse_markdown("_emphasized text_\n\n*strong emphasis*").unwrap();
+        assert_eq!(translate(md), "<p><em>emphasized text</em></p><p><strong>strong emphasis</strong></p>");
+
+        let (_, md) = parse_markdown("{#idName .class style=\"background-color:red\"}\n_emphasized text_\n\n{#id2 .cName width=\"100%\"}\n*strong emphasis*").unwrap();
+        assert_eq!(translate(md), "\
+            <p class=\"class\" id=\"idName\" style=\"background-color:red\"><em>emphasized text</em></p>\
+            <p class=\"cName\" id=\"id2\" width=\"100%\"><strong>strong emphasis</strong></p>");
+
+        // let (_, md) = parse_markdown(r#""#).unwrap();
+        // assert_eq!(translate(md), "");
+
+        // let (_, md) = parse_markdown(r#""#).unwrap();
+        // assert_eq!(translate(md), "");
+
+        // let (_, md) = parse_markdown(r#""#).unwrap();
+        // assert_eq!(translate(md), "");
+    }
+
+    #[test]
+    fn test_e2e_codeblock() {
+        let md_val = "\
+``` js
+console.log()
+```";
+        let (_, md) = parse_markdown(md_val).unwrap();
+        assert_eq!(translate(md), "<pre><code class=\"lang-js\">console.log()\n</code></pre>");
+    }
+
+    #[test]
+    fn test_e2e_verbatim_codeblock() {
+        let md_val = "\
+``` =html
+<div id=\"idname\">bla</div>
+```";
+        let (_, md) = parse_markdown(md_val).unwrap();
+        assert_eq!(translate(md), "<div id=\"idname\">bla</div>\n");
+    }
+
+    #[test]
+    fn test_e2e_div() {
+        let md_val = "\
+{.className #idName}
+:::
+# Hello world
+
+Message 
+:::";
+        let (_, md) = parse_markdown(md_val).unwrap();
+        assert_eq!(translate(md), "<div class=\"className\" id=\"idName\"><h1>Hello world</h1><p>Message </p></div>");
+    }
+
+    #[test]
+    fn test_e2e_div_nested() {
+        let md_val = "\
+{.className #idName}
+:::::
+# Hello world
+
+{.className #idName}
+:::
+# Hello world
+
+Message 
+:::
+Message 
+:::::";
+        let (_, md) = parse_markdown(md_val).unwrap();
+        assert_eq!(
+            translate(md), 
+            "<div class=\"className\" id=\"idName\"><h1>Hello world</h1><div class=\"className\" id=\"idName\">\
+                <h1>Hello world</h1><p>Message </p></div><p>Message </p></div>");
+    }
+
+    #[test]
+    fn test_e2e_div_nested_3() {
+        let md_val = "\
+{.c1 #i1}
+:::
+Message
+:::
+";
+        let (_, md) = parse_markdown(md_val).unwrap();
+        println!("{:?}", md);
+        assert_eq!(
+            translate(md), 
+            "<div class=\"c1\" id=\"i1\"><h1>Hello world</h1><div class=\"c2\" id=\"i2\">\
+                <h1>Hello world</h1><p>Message </p></div><p>Message </p></div>");
     }
 
     // #[test]
