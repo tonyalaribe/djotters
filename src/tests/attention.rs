@@ -1,9 +1,9 @@
 use super::super::markdown;
-use pretty_assertions::assert_eq;
 use super::super::parser;
+use pretty_assertions::assert_eq;
 
 #[test]
-fn debug_check(){
+fn debug_check() {
     assert_eq!(
         markdown("foo*bar*"),
         "<p>foo<em>bar</em></p>",
@@ -186,11 +186,11 @@ fn attention() -> Result<(), String> {
         "should not support strong emphasis if the opening is followed by whitespace"
     );
 
-  //   assert_eq!(
-  //   markdown("a**\"foo\"**"),
-  //   "<p>a**&quot;foo&quot;**</p>",
-  //   "should not support strong emphasis if the opening is preceded by something else and followed by punctuation"
-  // );
+    //   assert_eq!(
+    //   markdown("a**\"foo\"**"),
+    //   "<p>a**&quot;foo&quot;**</p>",
+    //   "should not support strong emphasis if the opening is preceded by something else and followed by punctuation"
+    // );
 
     assert_eq!(
         markdown("foo**bar**"),

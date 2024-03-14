@@ -1,13 +1,8 @@
-use std::str::pattern::Pattern;
-
-use crate::{Markdown, MarkdownAttributes};
 use crate::MarkdownInline;
 use crate::MarkdownText;
-use itertools::Itertools; 
+use crate::{Markdown, MarkdownAttributes};
+use itertools::Itertools;
 use std::collections::HashMap;
-use crate::parser::parse_markdown;
-
-
 
 pub fn translate(md: Vec<Markdown>) -> String {
     md.iter()
@@ -15,9 +10,7 @@ pub fn translate(md: Vec<Markdown>) -> String {
             Markdown::Heading(size, line, attr) => translate_header(*size, line.to_vec(), attr),
             Markdown::UnorderedList(lines, attr) => translate_unordered_list(lines.to_vec(), attr),
             Markdown::OrderedList(lines, attr) => translate_ordered_list(lines.to_vec(), attr),
-            Markdown::Codeblock(lang, code, attr) => {
-                translate_codeblock(lang, code, attr)
-            }
+            Markdown::Codeblock(lang, code, attr) => translate_codeblock(lang, code, attr),
             Markdown::Line(line, attr) => translate_line(line.to_vec(), attr),
             Markdown::Div(title, content, attr) => translate_div(title, content, attr),
             Markdown::LineBreak => "\n".into(),
@@ -26,8 +19,11 @@ pub fn translate(md: Vec<Markdown>) -> String {
         .join("")
 }
 
-
-fn translate_div(title: &Option<&str>, content: &Vec<Markdown>, attr1:&MarkdownAttributes) -> String {
+fn translate_div(
+    title: &Option<&str>,
+    content: &Vec<Markdown>,
+    attr1: &MarkdownAttributes,
+) -> String {
     let mut attr = attr1.clone();
     if let Some(t) = title {
         if let Some(attributes) = &mut attr {
@@ -45,26 +41,26 @@ fn translate_div(title: &Option<&str>, content: &Vec<Markdown>, attr1:&MarkdownA
 
     let attr_txt = translate_attributes(&attr); // Assuming this function takes a reference
     let content_txt = translate(content.to_vec()); // Assuming this function consumes the Vec<Markdown>
-    
+
     // Use format string directly without placeholder names for simplicity
     format!("<div{}>{}</div>", attr_txt, content_txt)
 }
 
 fn translate_attributes(opt: &MarkdownAttributes) -> String {
-    opt.as_ref().map_or(String::new(), |hash_map|
-        hash_map.iter()
+    opt.as_ref().map_or(String::new(), |hash_map| {
+        hash_map
+            .iter()
             .sorted()
-            .map(|(k, v)| format!(" {}=\"{}\"", k , v))
+            .map(|(k, v)| format!(" {}=\"{}\"", k, v))
             .collect::<Vec<_>>()
             .join("")
-    )
+    })
 }
 
 fn translate_to_element(el: &str, child: &str, attrs: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attrs);
     format!("<{el}{attr_txt}>{child}</{el}>")
 }
-
 
 fn translate_link(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attrs);
@@ -73,7 +69,7 @@ fn translate_link(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
 
 fn translate_image(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attrs);
-    format!("<img alt=\"{text}\" src=\"{url}\"{attr_txt}/>", )
+    format!("<img alt=\"{text}\" src=\"{url}\"{attr_txt}/>",)
 }
 
 fn translate_list_elements(lines: Vec<MarkdownText>) -> String {
@@ -91,27 +87,36 @@ fn translate_header(size: usize, text: MarkdownText, attr: &MarkdownAttributes) 
 
 fn translate_unordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
-    format!("<ul{attr_txt}>{}</ul>", translate_list_elements(lines.to_vec()))
+    format!(
+        "<ul{attr_txt}>{}</ul>",
+        translate_list_elements(lines.to_vec())
+    )
 }
 
 fn translate_ordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
-    format!("<ol{attr_txt}>{}</ol>", translate_list_elements(lines.to_vec()))
+    format!(
+        "<ol{attr_txt}>{}</ol>",
+        translate_list_elements(lines.to_vec())
+    )
 }
 
 fn translate_codeblock(lang: &str, code: &str, attr: &MarkdownAttributes) -> String {
     let trimmed_lang = lang.trim();
     let attr_txt = translate_attributes(attr);
-    if "=".is_prefix_of(trimmed_lang){
-        if "=html".is_prefix_of(trimmed_lang){
+    if trimmed_lang.starts_with("=") {
+        if trimmed_lang.starts_with("=html") {
             code.into()
-        }else{
+        } else {
             // Hide all verbatim blocks which are not of type html. To allow blocks used in other
             // media types like pdf or latex
             "".into()
         }
-    }else{
-        format!("<pre><code class=\"lang-{}\"{attr_txt}>{}</code></pre>", trimmed_lang, code)
+    } else {
+        format!(
+            "<pre><code class=\"lang-{}\"{attr_txt}>{}</code></pre>",
+            trimmed_lang, code
+        )
     }
 }
 
@@ -128,14 +133,22 @@ fn translate_line(text: MarkdownText, attr: &MarkdownAttributes) -> String {
 fn translate_text(text: MarkdownText) -> String {
     text.iter()
         .map(|part| match part {
-            MarkdownInline::Bold(text, attr) => translate_to_element("strong", &translate_text(text.to_vec()), attr),
-            MarkdownInline::Italic(text, attr) => translate_to_element("em" ,&translate_text(text.to_vec()), attr),
-            MarkdownInline::InlineCode(code, attr) => translate_to_element("code", &translate_text(code.to_vec()), attr),
+            MarkdownInline::Bold(text, attr) => {
+                translate_to_element("strong", &translate_text(text.to_vec()), attr)
+            }
+            MarkdownInline::Italic(text, attr) => {
+                translate_to_element("em", &translate_text(text.to_vec()), attr)
+            }
+            MarkdownInline::InlineCode(code, attr) => {
+                translate_to_element("code", &translate_text(code.to_vec()), attr)
+            }
             MarkdownInline::Link(text, url, attr) => translate_link(text, url, attr),
             MarkdownInline::Image(text, url, attr) => translate_image(text, url, attr),
             MarkdownInline::Plaintext(text, attr) => text.to_string(),
             MarkdownInline::LineBreak => "\n".into(),
-            MarkdownInline::Span(text, attr) => translate_to_element("span", &translate_text(text.to_vec()), attr)
+            MarkdownInline::Span(text, attr) => {
+                translate_to_element("span", &translate_text(text.to_vec()), attr)
+            }
         })
         .collect::<Vec<String>>()
         .join("")
@@ -148,7 +161,10 @@ mod tests {
     #[test]
     fn test_translate_boldtext() {
         assert_eq!(
-            translate_text(vec![MarkdownInline::Bold(vec![MarkdownInline::Plaintext("bold af", None)],None)]),
+            translate_text(vec![MarkdownInline::Bold(
+                vec![MarkdownInline::Plaintext("bold af", None)],
+                None
+            )]),
             String::from("<strong>bold af</strong>")
         );
     }
@@ -156,7 +172,10 @@ mod tests {
     #[test]
     fn test_translate_italic() {
         assert_eq!(
-            translate_text(vec![MarkdownInline::Italic(vec![MarkdownInline::Plaintext("italic af", None)], None)]),
+            translate_text(vec![MarkdownInline::Italic(
+                vec![MarkdownInline::Plaintext("italic af", None)],
+                None
+            )]),
             String::from("<em>italic af</em>")
         );
     }
@@ -164,19 +183,28 @@ mod tests {
     #[test]
     fn test_translate_inline_code() {
         assert_eq!(
-            translate_text(vec![MarkdownInline::InlineCode(vec![MarkdownInline::Plaintext("code af", None)], None)]),
+            translate_text(vec![MarkdownInline::InlineCode(
+                vec![MarkdownInline::Plaintext("code af", None)],
+                None
+            )]),
             String::from("<code>code af</code>")
         );
     }
 
     // Mostly examples from the djot spec
     #[test]
-    fn test_e2e_precedence(){
+    fn test_e2e_precedence() {
         let (_, md) = parse_markdown("_This is *regular_ not strong* emphasis").unwrap();
-        assert_eq!(translate(md), "<p><em>This is *regular</em> not strong* emphasis</p>");
+        assert_eq!(
+            translate(md),
+            "<p><em>This is *regular</em> not strong* emphasis</p>"
+        );
 
         let (_, md) = parse_markdown("*This is _strong* not regular_ emphasis").unwrap();
-        assert_eq!(translate(md), "<p><strong>This is _strong</strong> not regular_ emphasis</p>");
+        assert_eq!(
+            translate(md),
+            "<p><strong>This is _strong</strong> not regular_ emphasis</p>"
+        );
 
         let (_, md) = parse_markdown("[Link *](url)*").unwrap();
         assert_eq!(translate(md), "<p><a href=\"url\">Link *</a>*</p>");
@@ -192,9 +220,12 @@ mod tests {
         // let (_, md) = parse_markdown("{_Emphasized_}\n_}not emphasized{_").unwrap();
         // assert_eq!(translate(md), "<p><em>Emphasized</em>\n_}not emphasized{_</p>");
         //
-        
+
         let (_, md) = parse_markdown("[My link text](http://example.com)").unwrap();
-        assert_eq!(translate(md), "<p><a href=\"http://example.com\">My link text</a></p>");
+        assert_eq!(
+            translate(md),
+            "<p><a href=\"http://example.com\">My link text</a></p>"
+        );
 
         // It should be possible to split the link accross multiple lines and the newline should be
         // ignored
@@ -202,14 +233,19 @@ mod tests {
         // assert_eq!(translate(md), "<p><a href=\"http://example.com?product_number=234234234234234234234234\">My link text</a></p>\n");
 
         let (_, md) = parse_markdown(r#"![picture of a cat](cat.jpg)"#).unwrap();
-        assert_eq!(translate(md), "<p><img alt=\"picture of a cat\" src=\"cat.jpg\"/></p>");
+        assert_eq!(
+            translate(md),
+            "<p><img alt=\"picture of a cat\" src=\"cat.jpg\"/></p>"
+        );
 
         let (_, md) = parse_markdown("_emphasized text_").unwrap();
         assert_eq!(translate(md), "<p><em>emphasized text</em></p>");
 
-
         let (_, md) = parse_markdown("_emphasized text_\n\n*strong emphasis*").unwrap();
-        assert_eq!(translate(md), "<p><em>emphasized text</em></p><p><strong>strong emphasis</strong></p>");
+        assert_eq!(
+            translate(md),
+            "<p><em>emphasized text</em></p><p><strong>strong emphasis</strong></p>"
+        );
 
         let (_, md) = parse_markdown("{#idName .class style=\"background-color:red\"}\n_emphasized text_\n\n{#id2 .cName width=\"100%\"}\n*strong emphasis*").unwrap();
         assert_eq!(translate(md), "\
@@ -233,7 +269,10 @@ mod tests {
 console.log()
 ```";
         let (_, md) = parse_markdown(md_val).unwrap();
-        assert_eq!(translate(md), "<pre><code class=\"lang-js\">console.log()\n</code></pre>");
+        assert_eq!(
+            translate(md),
+            "<pre><code class=\"lang-js\">console.log()\n</code></pre>"
+        );
     }
 
     #[test]
@@ -256,7 +295,10 @@ console.log()
 Message 
 :::";
         let (_, md) = parse_markdown(md_val).unwrap();
-        assert_eq!(translate(md), "<div class=\"className\" id=\"idName\"><h1>Hello world</h1><p>Message </p></div>");
+        assert_eq!(
+            translate(md),
+            "<div class=\"className\" id=\"idName\"><h1>Hello world</h1><p>Message </p></div>"
+        );
     }
 
     #[test]
@@ -276,7 +318,7 @@ Message
 :::::";
         let (_, md) = parse_markdown(md_val).unwrap();
         assert_eq!(
-            translate(md), 
+            translate(md),
             "<div class=\"className\" id=\"idName\"><h1>Hello world</h1><div class=\"className\" id=\"idName\">\
                 <h1>Hello world</h1><p>Message </p></div><p>Message </p></div>");
     }
@@ -292,9 +334,10 @@ Message
         let (_, md) = parse_markdown(md_val).unwrap();
         println!("{:?}", md);
         assert_eq!(
-            translate(md), 
+            translate(md),
             "<div class=\"c1\" id=\"i1\"><h1>Hello world</h1><div class=\"c2\" id=\"i2\">\
-                <h1>Hello world</h1><p>Message </p></div><p>Message </p></div>");
+                <h1>Hello world</h1><p>Message </p></div><p>Message </p></div>"
+        );
     }
 
     // #[test]
@@ -308,116 +351,116 @@ Message
     //     );
     // }
 
-//     #[test]
-//     fn test_translate_image() {
-//         assert_eq!(
-//             translate_image(String::from("alt text"), String::from("https://github.com")),
-//             String::from("<img src=\"https://github.com\" alt=\"alt text\" />")
-//         );
-//     }
+    //     #[test]
+    //     fn test_translate_image() {
+    //         assert_eq!(
+    //             translate_image(String::from("alt text"), String::from("https://github.com")),
+    //             String::from("<img src=\"https://github.com\" alt=\"alt text\" />")
+    //         );
+    //     }
 
-//     #[test]
-//     fn test_translate_text() {
-//         let x = translate_text(vec![
-//             MarkdownInline::Plaintext(String::from(
-//                 "Foobar is a Python library for dealing with word pluralization.",
-//             )),
-//             MarkdownInline::Bold(String::from("bold")),
-//             MarkdownInline::Italic(String::from("italic"), None),
-//             MarkdownInline::InlineCode(String::from("code")),
-//             MarkdownInline::Link(String::from("tag"), String::from("https://link.com")),
-//             MarkdownInline::Image(String::from("tag"), String::from("https://link.com")),
-//             MarkdownInline::Plaintext(String::from(". the end!")),
-//         ]);
-//         assert_eq!(x, String::from("Foobar is a Python library for dealing with word pluralization.<b>bold</b><em>italic</em><code>code</code><a href=\"https://link.com\">tag</a><img src=\"https://link.com\" alt=\"tag\" />. the end!"));
-//         let x = translate_text(vec![]);
-//         assert_eq!(x, String::from(""));
-//     }
+    //     #[test]
+    //     fn test_translate_text() {
+    //         let x = translate_text(vec![
+    //             MarkdownInline::Plaintext(String::from(
+    //                 "Foobar is a Python library for dealing with word pluralization.",
+    //             )),
+    //             MarkdownInline::Bold(String::from("bold")),
+    //             MarkdownInline::Italic(String::from("italic"), None),
+    //             MarkdownInline::InlineCode(String::from("code")),
+    //             MarkdownInline::Link(String::from("tag"), String::from("https://link.com")),
+    //             MarkdownInline::Image(String::from("tag"), String::from("https://link.com")),
+    //             MarkdownInline::Plaintext(String::from(". the end!")),
+    //         ]);
+    //         assert_eq!(x, String::from("Foobar is a Python library for dealing with word pluralization.<b>bold</b><em>italic</em><code>code</code><a href=\"https://link.com\">tag</a><img src=\"https://link.com\" alt=\"tag\" />. the end!"));
+    //         let x = translate_text(vec![]);
+    //         assert_eq!(x, String::from(""));
+    //     }
 
-//     #[test]
-//     fn test_translate_header() {
-//         assert_eq!(
-//             translate_header(1, vec![MarkdownInline::Plaintext(String::from("Foobar"))]),
-//             String::from("<h1>Foobar</h1>")
-//         );
-//     }
+    //     #[test]
+    //     fn test_translate_header() {
+    //         assert_eq!(
+    //             translate_header(1, vec![MarkdownInline::Plaintext(String::from("Foobar"))]),
+    //             String::from("<h1>Foobar</h1>")
+    //         );
+    //     }
 
-//     #[test]
-//     fn test_translate_list_elements() {
-//         assert_eq!(
-//             translate_list_elements(vec![
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//             ]),
-//             String::from("<li>Foobar</li><li>Foobar</li><li>Foobar</li><li>Foobar</li>")
-//         );
-//     }
+    //     #[test]
+    //     fn test_translate_list_elements() {
+    //         assert_eq!(
+    //             translate_list_elements(vec![
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //             ]),
+    //             String::from("<li>Foobar</li><li>Foobar</li><li>Foobar</li><li>Foobar</li>")
+    //         );
+    //     }
 
-//     #[test]
-//     fn test_translate_unordered_list() {
-//         assert_eq!(
-//             translate_unordered_list(vec![
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//             ]),
-//             String::from("<ul><li>Foobar</li><li>Foobar</li><li>Foobar</li><li>Foobar</li></ul>")
-//         );
-//     }
+    //     #[test]
+    //     fn test_translate_unordered_list() {
+    //         assert_eq!(
+    //             translate_unordered_list(vec![
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //             ]),
+    //             String::from("<ul><li>Foobar</li><li>Foobar</li><li>Foobar</li><li>Foobar</li></ul>")
+    //         );
+    //     }
 
-//     #[test]
-//     fn test_translate_ordered_list() {
-//         assert_eq!(
-//             translate_ordered_list(vec![
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
-//             ]),
-//             String::from("<ol><li>Foobar</li><li>Foobar</li><li>Foobar</li><li>Foobar</li></ol>")
-//         );
-//     }
+    //     #[test]
+    //     fn test_translate_ordered_list() {
+    //         assert_eq!(
+    //             translate_ordered_list(vec![
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //                 vec![MarkdownInline::Plaintext(String::from("Foobar"))],
+    //             ]),
+    //             String::from("<ol><li>Foobar</li><li>Foobar</li><li>Foobar</li><li>Foobar</li></ol>")
+    //         );
+    //     }
 
-//     #[test]
-//     fn test_translate_codeblock() {
-//         assert_eq!(
-//             translate_codeblock(
-//                 String::from("python"),
-//                 String::from(
-//                     r#"
-// import foobar
+    //     #[test]
+    //     fn test_translate_codeblock() {
+    //         assert_eq!(
+    //             translate_codeblock(
+    //                 String::from("python"),
+    //                 String::from(
+    //                     r#"
+    // import foobar
 
-// foobar.pluralize(\'word\') # returns \'words\'
-// foobar.pluralize(\'goose\') # returns \'geese\'
-// foobar.singularize(\'phenomena\') # returns \'phenomenon\'
-// "#
-//                 )
-//             ),
-//             String::from(
-//                 r#"<pre><code class="lang-python">
-// import foobar
+    // foobar.pluralize(\'word\') # returns \'words\'
+    // foobar.pluralize(\'goose\') # returns \'geese\'
+    // foobar.singularize(\'phenomena\') # returns \'phenomenon\'
+    // "#
+    //                 )
+    //             ),
+    //             String::from(
+    //                 r#"<pre><code class="lang-python">
+    // import foobar
 
-// foobar.pluralize(\'word\') # returns \'words\'
-// foobar.pluralize(\'goose\') # returns \'geese\'
-// foobar.singularize(\'phenomena\') # returns \'phenomenon\'
-// </code></pre>"#
-//             )
-//         );
-//     }
+    // foobar.pluralize(\'word\') # returns \'words\'
+    // foobar.pluralize(\'goose\') # returns \'geese\'
+    // foobar.singularize(\'phenomena\') # returns \'phenomenon\'
+    // </code></pre>"#
+    //             )
+    //         );
+    //     }
 
-//     #[test]
-//     fn test_translate_line() {
-//         assert_eq!(
-//             translate_line(vec![
-//                 MarkdownInline::Plaintext(String::from("Foobar")),
-//                 MarkdownInline::Bold(String::from("Foobar")),
-//                 MarkdownInline::Italic(String::from("Foobar"), None),
-//                 MarkdownInline::InlineCode(String::from("Foobar")),
-//             ]),
-//             String::from("<p>Foobar<b>Foobar</b><em>Foobar</em><code>Foobar</code></p>")
-//         );
-//     }
+    //     #[test]
+    //     fn test_translate_line() {
+    //         assert_eq!(
+    //             translate_line(vec![
+    //                 MarkdownInline::Plaintext(String::from("Foobar")),
+    //                 MarkdownInline::Bold(String::from("Foobar")),
+    //                 MarkdownInline::Italic(String::from("Foobar"), None),
+    //                 MarkdownInline::InlineCode(String::from("Foobar")),
+    //             ]),
+    //             String::from("<p>Foobar<b>Foobar</b><em>Foobar</em><code>Foobar</code></p>")
+    //         );
+    //     }
 }

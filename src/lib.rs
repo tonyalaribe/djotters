@@ -1,10 +1,8 @@
-#![feature(pattern)]
-
 use std::collections::HashMap;
 
 pub mod parser;
-pub mod translator;
 pub mod tests;
+pub mod translator;
 
 pub type MarkdownText<'a> = Vec<MarkdownInline<'a>>;
 
@@ -33,7 +31,7 @@ pub enum MarkdownInline<'a> {
     Bold(MarkdownText<'a>, MarkdownAttributes<'a>),
     Italic(MarkdownText<'a>, MarkdownAttributes<'a>),
     Span(MarkdownText<'a>, MarkdownAttributes<'a>),
-    Plaintext(&'a str, MarkdownAttributes<'a>), 
+    Plaintext(&'a str, MarkdownAttributes<'a>),
     LineBreak,
 }
 
