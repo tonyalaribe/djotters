@@ -25,7 +25,7 @@ use nom::{
     Parser,
 };
 
-pub fn parse_markdown(i: &str) -> IResult<&str, Vec<Markdown>> {
+pub fn parse_markdown<'a>(i: &'a str) -> IResult<&'a str, Vec<Markdown<'a>>> {
     many1(alt((
         map(parse_header, |e| Markdown::Heading(e.1, e.2, e.0)),
         map(parse_unordered_list, |e| Markdown::UnorderedList(e.1, e.0)),
