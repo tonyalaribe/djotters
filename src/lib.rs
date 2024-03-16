@@ -4,6 +4,9 @@ pub mod parser;
 pub mod tests;
 pub mod translator;
 
+pub use parser::*;
+pub use translator::*;
+
 pub type MarkdownText<'a> = Vec<MarkdownInline<'a>>;
 
 // To hold parsed markdown attrributes. eg:
