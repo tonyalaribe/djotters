@@ -19,7 +19,7 @@ pub fn translate(md: Vec<Markdown>) -> String {
         .join("")
 }
 
-fn translate_div(
+pub fn translate_div(
     title: &Option<&str>,
     content: &Vec<Markdown>,
     attr1: &MarkdownAttributes,
@@ -46,7 +46,7 @@ fn translate_div(
     format!("<div{}>{}</div>", attr_txt, content_txt)
 }
 
-fn translate_attributes(opt: &MarkdownAttributes) -> String {
+pub fn translate_attributes(opt: &MarkdownAttributes) -> String {
     opt.as_ref().map_or(String::new(), |hash_map| {
         hash_map
             .iter()
@@ -57,22 +57,22 @@ fn translate_attributes(opt: &MarkdownAttributes) -> String {
     })
 }
 
-fn translate_to_element(el: &str, child: &str, attrs: &MarkdownAttributes) -> String {
+pub fn translate_to_element(el: &str, child: &str, attrs: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attrs);
     format!("<{el}{attr_txt}>{child}</{el}>")
 }
 
-fn translate_link(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
+pub fn translate_link(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attrs);
     format!("<a href=\"{url}\"{attr_txt}>{text}</a>")
 }
 
-fn translate_image(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
+pub fn translate_image(text: &str, url: &str, attrs: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attrs);
     format!("<img alt=\"{text}\" src=\"{url}\"{attr_txt}/>",)
 }
 
-fn translate_list_elements(lines: Vec<MarkdownText>) -> String {
+pub fn translate_list_elements(lines: Vec<MarkdownText>) -> String {
     lines
         .iter()
         .map(|line| format!("<li>{}</li>", translate_text(line.to_vec())))
@@ -80,12 +80,12 @@ fn translate_list_elements(lines: Vec<MarkdownText>) -> String {
         .join("")
 }
 
-fn translate_header(size: usize, text: MarkdownText, attr: &MarkdownAttributes) -> String {
+pub fn translate_header(size: usize, text: MarkdownText, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
     format!("<h{}{attr_txt}>{}</h{}>", size, translate_text(text), size)
 }
 
-fn translate_unordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -> String {
+pub fn translate_unordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
     format!(
         "<ul{attr_txt}>{}</ul>",
@@ -93,7 +93,7 @@ fn translate_unordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes)
     )
 }
 
-fn translate_ordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -> String {
+pub fn translate_ordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
     format!(
         "<ol{attr_txt}>{}</ol>",
@@ -101,7 +101,7 @@ fn translate_ordered_list(lines: Vec<MarkdownText>, attr: &MarkdownAttributes) -
     )
 }
 
-fn translate_codeblock(lang: &str, code: &str, attr: &MarkdownAttributes) -> String {
+pub fn translate_codeblock(lang: &str, code: &str, attr: &MarkdownAttributes) -> String {
     let trimmed_lang = lang.trim();
     let attr_txt = translate_attributes(attr);
     if trimmed_lang.starts_with("=") {
@@ -120,7 +120,7 @@ fn translate_codeblock(lang: &str, code: &str, attr: &MarkdownAttributes) -> Str
     }
 }
 
-fn translate_line(text: MarkdownText, attr: &MarkdownAttributes) -> String {
+pub fn translate_line(text: MarkdownText, attr: &MarkdownAttributes) -> String {
     let attr_txt = translate_attributes(attr);
     let line = translate_text(text);
     if line.len() > 0 {
@@ -130,7 +130,7 @@ fn translate_line(text: MarkdownText, attr: &MarkdownAttributes) -> String {
     }
 }
 
-fn translate_text(text: MarkdownText) -> String {
+pub fn translate_text(text: MarkdownText) -> String {
     text.iter()
         .map(|part| match part {
             MarkdownInline::Bold(text, attr) => {
@@ -148,6 +148,33 @@ fn translate_text(text: MarkdownText) -> String {
             MarkdownInline::LineBreak => "\n".into(),
             MarkdownInline::Span(text, attr) => {
                 translate_to_element("span", &translate_text(text.to_vec()), attr)
+            }
+        })
+        .collect::<Vec<String>>()
+        .join("")
+}
+
+
+// `translate_text_raw` returns only the text content of a markdown text, ignoring any non text or
+// stylistic components.
+pub fn translate_text_raw(text: MarkdownText) -> String {
+    text.iter()
+        .map(|part| match part {
+            MarkdownInline::Bold(text, _attr) => {
+                translate_text_raw(text.to_vec())
+            }
+            MarkdownInline::Italic(text, _attr) => {
+                translate_text(text.to_vec())
+            }
+            MarkdownInline::InlineCode(code, _attr) => {
+                translate_text(code.to_vec())
+            }
+            MarkdownInline::Link(text, _url, _attr) => text.to_string(),
+            MarkdownInline::Image(text, _url, _attr) => text.to_string(),
+            MarkdownInline::Plaintext(text, _attr) => text.to_string(),
+            MarkdownInline::LineBreak => "\n".into(),
+            MarkdownInline::Span(text, _attr) => {
+                translate_text(text.to_vec())
             }
         })
         .collect::<Vec<String>>()

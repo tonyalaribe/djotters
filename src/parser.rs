@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 
+use crate::translator;
+
 use crate::MarkdownInline;
 use crate::MarkdownText;
 use crate::{Markdown, MarkdownAttributes};
+extern crate slugify;
+use slugify::slugify;
 
 use nom::{
     branch::{alt, permutation},
@@ -27,7 +31,7 @@ use nom::{
 
 pub fn parse_markdown<'a>(i: &'a str) -> IResult<&'a str, Vec<Markdown<'a>>> {
     many1(alt((
-        map(parse_header, |e| Markdown::Heading(e.1, e.2, e.0)),
+        map(parse_header, |mut e| Markdown::Heading(e.1, e.2.clone(), set_or_check_header_id(&mut e.0, e.2))),
         map(parse_unordered_list, |e| Markdown::UnorderedList(e.1, e.0)),
         map(parse_ordered_list, |e| Markdown::OrderedList(e.1, e.0)),
         map(parse_code_block, |e| {
@@ -39,12 +43,32 @@ pub fn parse_markdown<'a>(i: &'a str) -> IResult<&'a str, Vec<Markdown<'a>>> {
     )))(i)
 }
 
-// fn parse_div(i: &str) -> IResult<&str, (MarkdownAttributes, Option<&str>, Vec<Markdown>) > {
-//     tuple(
-//         opt(terminated(parse_attributes, tag("\n"))),
-//
-//     )
-// }
+
+pub fn set_or_check_header_id<'a>(
+    attrs: &mut Option<HashMap<&'a str, String>>,
+    content: Vec<MarkdownInline<'a>>,
+) -> MarkdownAttributes<'a> {
+    // Check if attrs is Some and if it contains the key "id"
+    if let Some(ref mut attrs_map) = attrs {
+        if !attrs_map.contains_key("id") {
+            // If "id" is not present, insert a new "id" with the slugified content
+            let slug = slugify_md(content); // Assuming slugify_md is defined elsewhere
+            attrs_map.insert("id", slug);
+        }
+    } else {
+        // If attrs is None, create a new HashMap and insert the "id"
+        let mut new_attrs = HashMap::new();
+        let slug = slugify_md(content); // Assuming slugify_md is defined elsewhere
+        new_attrs.insert("id", slug);
+        *attrs = Some(new_attrs);
+    }
+
+    attrs.to_owned()
+}
+
+pub fn slugify_md(content: Vec<MarkdownInline>) -> String {
+    slugify!(&translator::translate_text_raw(content))
+}
 
 fn parse_div(i: &str) -> IResult<&str, (Option<&str>, Vec<Markdown>, MarkdownAttributes)> {
     let (input, attr) = opt(terminated(parse_attributes, tag("\n")))(i)?;
@@ -118,24 +142,6 @@ fn parse_key_value_pair(input: &str) -> IResult<&str, (&str, &str)> {
     let parse_key = alphanumeric1;
     let parse_value = delimited(tag("\""), take_while(|c| c != '"'), tag("\""));
     separated_pair(parse_key, tag("="), parse_value)(input)
-}
-
-fn parse_attributes1(input: &str) -> IResult<&str, HashMap<String, String>> {
-    let parse_attribute = alt((parse_id, parse_class, parse_key_value_pair));
-    let parse_attributes = many0(delimited(multispace0, parse_attribute, multispace0));
-
-    let mut attributes_parser = delimited(
-        tag("{"),
-        map(parse_attributes, |attrs| {
-            attrs
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect()
-        }),
-        tag("}"),
-    );
-
-    attributes_parser(input)
 }
 
 fn vec_to_hashmap_concat<'a>(vec: Vec<(&'a str, &str)>) -> HashMap<&'a str, String> {
