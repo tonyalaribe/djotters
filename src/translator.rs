@@ -395,6 +395,30 @@ Message
                 <h1 id=\"hello-world-2\">Hello world 2</h1><p>Message </p></div><p>Message </p></div>");
     }
 
+    #[test]
+    fn test_e2e_div_nested_inverted_with_code_block() {
+        let md_val = "\
+{.className #idName}
+:::
+```html
+bla
+```
+{.className #idName}
+:::::
+# Hello world 2
+
+Message 
+:::::
+
+Message 
+:::";
+        let (_, md) = parse_markdown(md_val).unwrap();
+        assert_eq!(
+            translate(md),
+            "<div class=\"className\" id=\"idName\"><h1 id=\"hello-world\">Hello world</h1><div class=\"className\" id=\"idName\">\
+                <h1 id=\"hello-world-2\">Hello world 2</h1><p>Message </p></div><p>Message </p></div>");
+    }
+
 
 
     #[test]

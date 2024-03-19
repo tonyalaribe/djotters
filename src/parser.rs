@@ -344,10 +344,6 @@ fn parse_markdown_text(accept_linebreak: bool) -> impl Fn(&str) -> IResult<&str,
     move |i: &str| many1(parse_markdown_inline(accept_linebreak))(i)
 }
 
-// fn parse_markdown_paragraph(i: &str) -> IResult<&str, (MarkdownText, MarkdownAttributes)> {
-//     pair(terminated(parse_markdown_text, alt((tag("\n\n"),eof ))), opt(parse_attributes))(i)
-// }
-
 // A paragraph can include optional attributes, which will be on the line before it
 // ```
 // {.className #idName attr="attrVal" attr2=attrVal2}
@@ -359,7 +355,7 @@ fn parse_markdown_paragraph(i: &str) -> IResult<&str, (MarkdownAttributes, Markd
             opt(terminated(parse_attributes, tag("\n"))),
             parse_markdown_text(true),
         ),
-        alt((tag("\n\n"), eof)),
+        block_ending,
     )(i.trim_start())
 }
 
@@ -424,7 +420,7 @@ fn parse_code_block(i: &str) -> IResult<&str, ((&str, MarkdownAttributes), &str)
 }
 
 fn parse_code_block_body(i: &str) -> IResult<&str, &str> {
-    delimited(tag("\n"), is_not("```"), tag("```"))(i)
+    delimited(tag("\n"), is_not("```"), pair(tag("```"), block_ending))(i)
 }
 
 fn parse_code_block_lang(i: &str) -> IResult<&str, (&str, MarkdownAttributes)> {
