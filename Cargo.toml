@@ -1,6 +1,6 @@
 [package]
 name = "djotters"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["Anthony Alaribe <anthonyalaribe@gmail.com>"]
 description = "Djot (Markdown) parser that runs at hyper speeds!"
 license = "MIT/Apache-2.0"

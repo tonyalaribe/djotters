@@ -183,6 +183,8 @@ pub fn translate_text_raw(text: MarkdownText) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::parse_markdown;
+
     use super::*;
 
     #[test]
@@ -278,15 +280,6 @@ mod tests {
         assert_eq!(translate(md), "\
             <p class=\"class\" id=\"idName\" style=\"background-color:red\"><em>emphasized text</em></p>\
             <p class=\"cName\" id=\"id2\" width=\"100%\"><strong>strong emphasis</strong></p>");
-
-        // let (_, md) = parse_markdown(r#""#).unwrap();
-        // assert_eq!(translate(md), "");
-
-        // let (_, md) = parse_markdown(r#""#).unwrap();
-        // assert_eq!(translate(md), "");
-
-        // let (_, md) = parse_markdown(r#""#).unwrap();
-        // assert_eq!(translate(md), "");
     }
 
     #[test]
@@ -321,10 +314,32 @@ console.log()
 
 Message 
 :::";
+        let (left, md) = parse_markdown(md_val).unwrap();
+        println!("LEFT {left:?}");
+        assert_eq!(
+            translate(md),
+            "<div class=\"className\" id=\"idName\"><h1 id=\"hello-world\">Hello world</h1><p>Message </p></div>"
+        );
+
+        let md_val = "\
+{.className #idName}
+:::
+# Hello world
+
+Message 
+:::
+{.className #idName}
+:::
+# Hello world 2
+
+Message 
+:::
+            ";
         let (_, md) = parse_markdown(md_val).unwrap();
         assert_eq!(
             translate(md),
-            "<div class=\"className\" id=\"idName\"><h1>Hello world</h1><p>Message </p></div>"
+            "<div class=\"className\" id=\"idName\"><h1 id=\"hello-world\">Hello world</h1><p>Message </p></div>\
+                <div class=\"className\" id=\"idName\"><h1 id=\"hello-world-2\">Hello world 2</h1><p>Message </p></div>"
         );
     }
 
@@ -337,7 +352,7 @@ Message
 
 {.className #idName}
 :::
-# Hello world
+# Hello world 2
 
 Message 
 :::
@@ -346,9 +361,41 @@ Message
         let (_, md) = parse_markdown(md_val).unwrap();
         assert_eq!(
             translate(md),
-            "<div class=\"className\" id=\"idName\"><h1>Hello world</h1><div class=\"className\" id=\"idName\">\
-                <h1>Hello world</h1><p>Message </p></div><p>Message </p></div>");
+            "<div class=\"className\" id=\"idName\"><h1 id=\"hello-world\">Hello world</h1><div class=\"className\" id=\"idName\">\
+                <h1 id=\"hello-world-2\">Hello world 2</h1><p>Message </p></div><p>Message </p></div>");
     }
+
+    #[test]
+    fn test_e2e_div_nested_inverted() {
+        let md_val = "\
+{.className #idName}
+:::
+# Hello world
+
+{.className #idName}
+:::::
+# Hello world 2
+
+Message 
+:::::
+
+{.className #idName}
+:::::
+# Hello world 2
+
+Message 
+:::::
+
+Message 
+:::";
+        let (_, md) = parse_markdown(md_val).unwrap();
+        assert_eq!(
+            translate(md),
+            "<div class=\"className\" id=\"idName\"><h1 id=\"hello-world\">Hello world</h1><div class=\"className\" id=\"idName\">\
+                <h1 id=\"hello-world-2\">Hello world 2</h1><p>Message </p></div><p>Message </p></div>");
+    }
+
+
 
     #[test]
     fn test_e2e_div_nested_3() {

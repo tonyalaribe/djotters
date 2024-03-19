@@ -12,7 +12,7 @@ use nom::{
     branch::{alt, permutation},
     bytes::complete::{is_not, tag, take, take_while, take_while1},
     character::{
-        complete::{alphanumeric1, multispace1},
+        complete::{alphanumeric1, line_ending, multispace1},
         is_digit,
     },
     combinator::{self, map, not, opt},
@@ -31,7 +31,11 @@ use nom::{
 
 pub fn parse_markdown<'a>(i: &'a str) -> IResult<&'a str, Vec<Markdown<'a>>> {
     many1(alt((
-        map(parse_header, |mut e| Markdown::Heading(e.1, e.2.clone(), set_or_check_header_id(&mut e.0, e.2))),
+        // Should be replaced. Hard linebreak is \<newline>
+        map(tag("\n\n"), |_e| Markdown::LineBreak), 
+        map(parse_header, |mut e| {
+            Markdown::Heading(e.1, e.2.clone(), set_or_check_header_id(&mut e.0, e.2))
+        }),
         map(parse_unordered_list, |e| Markdown::UnorderedList(e.1, e.0)),
         map(parse_ordered_list, |e| Markdown::OrderedList(e.1, e.0)),
         map(parse_code_block, |e| {
@@ -39,10 +43,8 @@ pub fn parse_markdown<'a>(i: &'a str) -> IResult<&'a str, Vec<Markdown<'a>>> {
         }),
         map(parse_div, |e| Markdown::Div(e.0, e.1, e.2)),
         map(parse_markdown_paragraph, |e| Markdown::Line(e.1, e.0)),
-        map(tag("\n"), |_e| Markdown::LineBreak),
     )))(i)
 }
-
 
 pub fn set_or_check_header_id<'a>(
     attrs: &mut Option<HashMap<&'a str, String>>,
@@ -70,21 +72,36 @@ pub fn slugify_md(content: Vec<MarkdownInline>) -> String {
     slugify!(&translator::translate_text_raw(content))
 }
 
+pub fn block_ending(i: &str) -> IResult<&str, Vec<&str>, nom::error::Error<&str>> {
+    alt((
+        many1(line_ending), 
+        map(eof, |_| Vec::new())
+    ))(i)
+}
+
 fn parse_div(i: &str) -> IResult<&str, (Option<&str>, Vec<Markdown>, MarkdownAttributes)> {
     let (input, attr) = opt(terminated(parse_attributes, tag("\n")))(i)?;
-
-    let (input, colon_count) = map(take_while1(|c| c == ':'), |s: &str| s.len())(input)?;
+    let (input, colon_count) = preceded(
+        multispace0,
+        map(take_while1(|c| c == ':'), |s: &str| s.len()),
+    )(input)?;
 
     let closing_tag = ":".repeat(colon_count);
-
     let (input, label) = terminated(opt(preceded(tag(" "), take_until("\n"))), tag("\n"))(input)?;
+
     let (input, content) = take_before0(tuple((
         tag("\n"),
         tag(&*closing_tag),
-        alt((tag("\n"), eof, multispace1)),
+        block_ending,
     )))(input)?;
-    let (input, _) = pair(tag("\n"), tag(&*closing_tag))(input)?;
-    let (x, content_md) = parse_markdown(content)?;
+
+    let (input, _) = tuple((
+        tag("\n"),
+        multispace0,
+        tag(&*closing_tag),
+        block_ending,
+    ))(input)?;
+    let (_, content_md) = parse_markdown(content)?;
     Ok((input, (label, content_md, attr)))
 }
 
@@ -94,7 +111,6 @@ fn match_surround_text<'a>(
     closer: &'a str,
 ) -> IResult<&'a str, &'a str> {
     let not_surrounder = take_while1(move |c| c != '\n' && c != closer.chars().next().unwrap());
-
     let no_end_space = move |input: &'a str| {
         let (input, text) = not_surrounder(input)?;
         if text.ends_with(' ')
@@ -366,7 +382,7 @@ fn parse_header(i: &str) -> IResult<&str, (MarkdownAttributes, usize, MarkdownTe
             parse_header_tag,
             parse_markdown_text(false),
         )),
-        alt((tag("\n\n"), tag("\n"), eof)),
+        alt((tag("\n\n"), eof)),
     )(i.trim_start())
 }
 
