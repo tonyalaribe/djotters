@@ -239,7 +239,7 @@ fn parse_plaintext(
                 // Not really a linebreak, but this is a stopgap against adding attribute
                 // to the MarkdownInline enum, when we're only using this to peek
                 map(parse_attributes, |_| MarkdownInline::LineBreak),
-                map(tag("\\\n"), |_| MarkdownInline::LineBreak),
+                map(tag("\n"), |_| MarkdownInline::LineBreak),
                 map(eof, |_| MarkdownInline::LineBreak),
             )))(i)?;
             if output.len() == 0 {
@@ -295,6 +295,7 @@ fn parse_markdown_not_plain(
                     MarkdownInline::Image(tag, url, attr)
                 },
             ),
+            map(tag("\\\n"), |_| MarkdownInline::LineBreak),
             map_res(terminated(tag("\n"), peek(is_not("\n"))), |_| {
                 if accept_linebreak {
                     Ok(MarkdownInline::LineBreak)
