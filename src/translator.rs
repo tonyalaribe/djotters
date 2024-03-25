@@ -154,28 +154,19 @@ pub fn translate_text(text: MarkdownText) -> String {
         .join("")
 }
 
-
 // `translate_text_raw` returns only the text content of a markdown text, ignoring any non text or
 // stylistic components.
 pub fn translate_text_raw(text: MarkdownText) -> String {
     text.iter()
         .map(|part| match part {
-            MarkdownInline::Bold(text, _attr) => {
-                translate_text_raw(text.to_vec())
-            }
-            MarkdownInline::Italic(text, _attr) => {
-                translate_text(text.to_vec())
-            }
-            MarkdownInline::InlineCode(code, _attr) => {
-                translate_text(code.to_vec())
-            }
+            MarkdownInline::Bold(text, _attr) => translate_text_raw(text.to_vec()),
+            MarkdownInline::Italic(text, _attr) => translate_text(text.to_vec()),
+            MarkdownInline::InlineCode(code, _attr) => translate_text(code.to_vec()),
             MarkdownInline::Link(text, _url, _attr) => text.to_string(),
             MarkdownInline::Image(text, _url, _attr) => text.to_string(),
             MarkdownInline::Plaintext(text, _attr) => text.to_string(),
             MarkdownInline::LineBreak => "\n".into(),
-            MarkdownInline::Span(text, _attr) => {
-                translate_text(text.to_vec())
-            }
+            MarkdownInline::Span(text, _attr) => translate_text(text.to_vec()),
         })
         .collect::<Vec<String>>()
         .join("")
@@ -419,8 +410,6 @@ Message
                 <h1 id=\"hello-world-2\">Hello world 2</h1><p>Message </p></div><p>Message </p></div>");
     }
 
-
-
     #[test]
     fn test_e2e_div_nested_3() {
         let md_val = "\
@@ -438,7 +427,6 @@ Message
         );
     }
 
-
     #[test]
     fn test_e2e_inline_link() {
         let md_val = "Message another [link Alt](/link) \nmore text **title**";
@@ -454,7 +442,6 @@ Message
     fn test_e2e_inline_link2() {
         let md_val = "Message another [link Alt](/link) more text **title**";
         let (_, md) = parse_markdown(md_val).unwrap();
-        println!("{:?}", md);
         assert_eq!(
             translate(md),
             "<p>Message another <a href=\"/link\">link Alt</a></p>"
@@ -462,7 +449,7 @@ Message
     }
 
     #[test]
-    fn test_e2e_parsing(){
+    fn test_e2e_parsing() {
         let md_val = r#"
 ###### [*Full Observability, Zero Disruptions*{.drop-shadow-md}]{.bg-amber-300 .px-2 .rounded-md}
 
@@ -478,8 +465,47 @@ dsdsdsc sdsd fdfs
             translate(md),
             "<p>Message another <a href=\"/link\">link Alt</a></p>"
         );
-
     }
+
+    #[test]
+    fn test_e2e_ordered_list() {
+        let md_val = r#"
+1. Link 1
+2. Link 2 
+
+
+3. Link 3 
+
+
+
+4. Link 4"#;
+        let (_, md) = parse_markdown(md_val).unwrap();
+        assert_eq!(
+            translate(md),
+            "<ol><li>Link 1</li><li>Link 2 </li><li>Link 3 </li><li>Link 4</li></ol>"
+        );
+    }
+
+
+    #[test]
+    fn test_e2e_ordered_list_nested() {
+        let md_val = r#"
+1. Link 1
+2. Link 2 
+
+    a. link a
+    b. link b 
+
+3. Link 3 
+4. Link 4"#;
+        let (_, md) = parse_markdown(md_val).unwrap();
+        assert_eq!(
+            translate(md),
+            "<ol><li>Link 1</li><li>Link 2 </li><li>Link 3 </li><li>Link 4</li></ol>"
+        );
+    }
+
+
     // #[test]
     // fn test_translate_link() {
     //     assert_eq!(

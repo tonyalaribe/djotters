@@ -397,7 +397,7 @@ fn parse_ordered_list_tag(i: &str) -> IResult<&str, &str> {
 }
 
 fn parse_ordered_list_element(i: &str) -> IResult<&str, MarkdownText> {
-    preceded(parse_ordered_list_tag, parse_markdown_text(false))(i)
+    delimited(parse_ordered_list_tag, parse_markdown_text(false), block_ending)(i)
 }
 
 fn parse_ordered_list(i: &str) -> IResult<&str, (MarkdownAttributes, Vec<MarkdownText>)> {
