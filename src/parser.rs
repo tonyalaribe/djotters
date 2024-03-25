@@ -32,7 +32,7 @@ use nom::{
 pub fn parse_markdown<'a>(i: &'a str) -> IResult<&'a str, Vec<Markdown<'a>>> {
     many1(alt((
         // Should be replaced. Hard linebreak is \<newline>
-        map(tag("\n\n"), |_e| Markdown::LineBreak), 
+        map(tag("\n\n"), |_e| Markdown::LineBreak),
         map(parse_header, |mut e| {
             Markdown::Heading(e.1, e.2.clone(), set_or_check_header_id(&mut e.0, e.2))
         }),
@@ -73,10 +73,7 @@ pub fn slugify_md(content: Vec<MarkdownInline>) -> String {
 }
 
 pub fn block_ending(i: &str) -> IResult<&str, Vec<&str>, nom::error::Error<&str>> {
-    alt((
-        many1(line_ending), 
-        map(eof, |_| Vec::new())
-    ))(i)
+    alt((many1(line_ending), map(eof, |_| Vec::new())))(i)
 }
 
 fn parse_div(i: &str) -> IResult<&str, (Option<&str>, Vec<Markdown>, MarkdownAttributes)> {
@@ -89,18 +86,10 @@ fn parse_div(i: &str) -> IResult<&str, (Option<&str>, Vec<Markdown>, MarkdownAtt
     let closing_tag = ":".repeat(colon_count);
     let (input, label) = terminated(opt(preceded(tag(" "), take_until("\n"))), tag("\n"))(input)?;
 
-    let (input, content) = take_before0(tuple((
-        tag("\n"),
-        tag(&*closing_tag),
-        block_ending,
-    )))(input)?;
+    let (input, content) =
+        take_before0(tuple((tag("\n"), tag(&*closing_tag), block_ending)))(input)?;
 
-    let (input, _) = tuple((
-        tag("\n"),
-        multispace0,
-        tag(&*closing_tag),
-        block_ending,
-    ))(input)?;
+    let (input, _) = tuple((tag("\n"), multispace0, tag(&*closing_tag), block_ending))(input)?;
     let (_, content_md) = parse_markdown(content)?;
     Ok((input, (label, content_md, attr)))
 }
@@ -198,7 +187,6 @@ fn match_surround2_with_attrs<'a>(
         } else {
             ("", vec![MarkdownInline::Plaintext(text, None)])
         };
-
         Ok((remaining, (child_elements, attrs)))
     }
 }
@@ -240,24 +228,20 @@ fn parse_plaintext(
     accept_linebreak: bool,
 ) -> impl Fn(&str) -> IResult<&str, (&str, MarkdownAttributes)> {
     move |i: &str| {
-        let (input, output) = recognize(many_till(
-            is_not("\n"),
-            peek(alt((
+        if i.len() == 0 {
+            Err(nom::Err::Error(nom::error::Error::new(
+                i,
+                nom::error::ErrorKind::Tag,
+            )))
+        } else {
+            let (input, output) = take_before0(alt((
                 parse_markdown_not_plain(accept_linebreak),
                 // Not really a linebreak, but this is a stopgap against adding attribute
                 // to the MarkdownInline enum, when we're only using this to peek
                 map(parse_attributes, |_| MarkdownInline::LineBreak),
-                map(tag("\n"), |_| MarkdownInline::LineBreak),
+                map(tag("\\\n"), |_| MarkdownInline::LineBreak),
                 map(eof, |_| MarkdownInline::LineBreak),
-            ))),
-        ))(i)?;
-
-        if output == "" {
-            Err(nom::Err::Error(nom::error::Error::new(
-                input,
-                nom::error::ErrorKind::Eof,
-            )))
-        } else {
+            )))(i)?;
             Ok((input, (output, None)))
         }
     }
@@ -378,7 +362,7 @@ fn parse_header(i: &str) -> IResult<&str, (MarkdownAttributes, usize, MarkdownTe
             parse_header_tag,
             parse_markdown_text(false),
         )),
-        alt((tag("\n\n"), eof)),
+        block_ending,
     )(i.trim_start())
 }
 
@@ -520,10 +504,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_markdown_text1() {
+        let resp = parse_markdown_text(false)("italic");
+        println!("{:?}", resp);
+    }
+
+    #[test]
     fn test_parse_markdown_text() {
         // assert_eq!(parse_markdown_not_plain(false)("*here is italic*"),
         //     Ok(("", MarkdownInline::Italic("here is italic", None)))
         // );
+        //
         assert_eq!(
             parse_plaintext(false)("*here is \nitalic*"),
             Ok(("\nitalic*", ("*here is ", None)))

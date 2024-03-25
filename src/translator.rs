@@ -438,6 +438,29 @@ Message
         );
     }
 
+
+    #[test]
+    fn test_e2e_inline_link() {
+        let md_val = "Message another [link Alt](/link) \nmore text **title**";
+        let (_, md) = parse_markdown(md_val).unwrap();
+        println!("{:?}", md);
+        assert_eq!(
+            translate(md),
+            "<p>Message another <a href=\"/link\">link Alt</a> \nmore text <strong>title</strong></p>"
+        );
+    }
+
+    #[test]
+    fn test_e2e_inline_link2() {
+        let md_val = "Message another [link Alt](/link) more text **title**";
+        let (_, md) = parse_markdown(md_val).unwrap();
+        println!("{:?}", md);
+        assert_eq!(
+            translate(md),
+            "<p>Message another <a href=\"/link\">link Alt</a></p>"
+        );
+    }
+
     // #[test]
     // fn test_translate_link() {
     //     assert_eq!(
