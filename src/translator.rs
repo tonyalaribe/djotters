@@ -461,6 +461,25 @@ Message
         );
     }
 
+    #[test]
+    fn test_e2e_parsing(){
+        let md_val = r#"
+###### [*Full Observability, Zero Disruptions*{.drop-shadow-md}]{.bg-amber-300 .px-2 .rounded-md}
+
+
+
+### See Clearly, Fix Quickly. Observe and Fix any API issues in Real Time.
+
+dsdsdsc sdsd fdfs
+"#;
+        let (_, md) = parse_markdown(md_val).unwrap();
+        println!("{:?}", md);
+        assert_eq!(
+            translate(md),
+            "<p>Message another <a href=\"/link\">link Alt</a></p>"
+        );
+
+    }
     // #[test]
     // fn test_translate_link() {
     //     assert_eq!(

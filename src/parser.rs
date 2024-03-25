@@ -231,7 +231,7 @@ fn parse_plaintext(
         if i.len() == 0 {
             Err(nom::Err::Error(nom::error::Error::new(
                 i,
-                nom::error::ErrorKind::Tag,
+                nom::error::ErrorKind::Eof,
             )))
         } else {
             let (input, output) = take_before0(alt((
@@ -242,7 +242,14 @@ fn parse_plaintext(
                 map(tag("\\\n"), |_| MarkdownInline::LineBreak),
                 map(eof, |_| MarkdownInline::LineBreak),
             )))(i)?;
-            Ok((input, (output, None)))
+            if output.len() == 0 {
+                Err(nom::Err::Error(nom::error::Error::new(
+                    i,
+                    nom::error::ErrorKind::Not,
+                )))
+            } else {
+                Ok((input, (output, None)))
+            }
         }
     }
 }
@@ -474,9 +481,6 @@ mod tests {
 
     #[test]
     fn test_parse_markdown_inline() {
-        let x = parse_plaintext(false)("here is *italic*");
-        println!("parse plain {x:?}");
-
         assert_eq!(
             parse_markdown_inline(false)("here is *italic*"),
             Ok(("*italic*", MarkdownInline::Plaintext("here is ", None)))
@@ -493,13 +497,22 @@ mod tests {
             parse_markdown_inline(false)("* here is italic *"),
             Ok(("", MarkdownInline::Plaintext("* here is italic *", None)))
         );
-        // assert_eq!(
-        //     parse_markdown_inline(false)("*here is italic*{ id=\"abc\" b=\"c\" }"),
-        //     Ok(("", MarkdownInline::Italic("here is italic", Some(HashMap::from([("id".into(), "abc".into()), ("b".into(), "c".into())])))))
-        // );
+        assert_eq!(
+            parse_markdown_inline(false)("*here is italic*{ id=\"abc\" b=\"c\" }"),
+            Ok((
+                "",
+                MarkdownInline::Bold(
+                    vec![MarkdownInline::Plaintext("here is italic", None)],
+                    Some(HashMap::from([
+                        ("id".into(), "abc".into()),
+                        ("b".into(), "c".into())
+                    ]))
+                )
+            ))
+        );
         assert_eq!(
             parse_markdown_inline(false)("*here is \nitalic*"),
-            Ok(("\nitalic*", MarkdownInline::Plaintext("*here is ", None)))
+            Ok(("", MarkdownInline::Plaintext("*here is \nitalic*", None)))
         )
     }
 
@@ -564,12 +577,32 @@ mod tests {
 
     #[test]
     fn test_parse_markdown_block() {
-        // assert_eq!(parse_markdown("*here*italics"),
-        //     Ok(("", vec![Markdown::Line(vec![MarkdownInline::Italic("here", None), MarkdownInline::Plaintext("italics", None)], None)]))
-        // );
-        // assert_eq!(parse_markdown("foo*bar*"),
-        //     Ok(("", vec![Markdown::Line(vec![MarkdownInline::Plaintext("foo", None), MarkdownInline::Italic("bar", None)], None)]))
-        // );
+        assert_eq!(
+            parse_markdown("*here*italics"),
+            Ok((
+                "",
+                vec![Markdown::Line(
+                    vec![
+                        MarkdownInline::Bold(vec![MarkdownInline::Plaintext("here", None)], None),
+                        MarkdownInline::Plaintext("italics", None)
+                    ],
+                    None
+                )]
+            ))
+        );
+        assert_eq!(
+            parse_markdown("foo*bar*"),
+            Ok((
+                "",
+                vec![Markdown::Line(
+                    vec![
+                        MarkdownInline::Plaintext("foo", None),
+                        MarkdownInline::Bold(vec![MarkdownInline::Plaintext("bar", None)], None)
+                    ],
+                    None
+                )]
+            ))
+        );
         assert_eq!(
             parse_header("# The header"),
             Ok((
@@ -580,8 +613,12 @@ mod tests {
         assert_eq!(
             parse_header("# The \nheader"),
             Ok((
-                "header",
-                (None, 1, vec![MarkdownInline::Plaintext("The ", None)])
+                "",
+                (
+                    None,
+                    1,
+                    vec![MarkdownInline::Plaintext("The \nheader", None)]
+                )
             ))
         );
         // assert_eq!(parse_markdown("## foo*bar*"),
@@ -909,28 +946,28 @@ mod tests {
             parse_plaintext(true)("*bold babey bold*"),
             Err(NomErr::Error(Error {
                 input: "*bold babey bold*",
-                code: ErrorKind::Eof // should be ErrorKind::Not
+                code: ErrorKind::Not
             }))
         );
         assert_eq!(
             parse_plaintext(true)("[link babey](and then somewhat)"),
             Err(NomErr::Error(Error {
                 input: "[link babey](and then somewhat)",
-                code: ErrorKind::Eof // ErrorKind::Not
+                code: ErrorKind::Not
             }))
         );
         assert_eq!(
             parse_plaintext(true)("`codeblock for bums`"),
             Err(NomErr::Error(Error {
                 input: "`codeblock for bums`",
-                code: ErrorKind::Eof // ErrorKind::Not
+                code: ErrorKind::Not
             }))
         );
         assert_eq!(
             parse_plaintext(true)("![ but wait theres more](jk)"),
             Err(NomErr::Error(Error {
                 input: "![ but wait theres more](jk)",
-                code: ErrorKind::Eof // ErrorKind::Not
+                code: ErrorKind::Not
             }))
         );
         assert_eq!(
@@ -946,42 +983,42 @@ mod tests {
             Ok(("", ("here is plaintext![image starting", None)))
         );
         assert_eq!(
-            parse_plaintext(true)("here is plaintext\n"),
-            Ok(("\n", ("here is plaintext", None)))
+            parse_plaintext(true)("here is plaintext"),
+            Ok(("", ("here is plaintext", None)))
         );
         assert_eq!(
             parse_plaintext(true)("*here is italic*"),
             Err(NomErr::Error(Error {
                 input: "*here is italic*",
-                code: ErrorKind::Eof
+                code: ErrorKind::Not
             }))
         );
         assert_eq!(
             parse_plaintext(true)("**here is bold**"),
             Err(NomErr::Error(Error {
                 input: "**here is bold**",
-                code: ErrorKind::Eof
+                code: ErrorKind::Not
             }))
         );
         assert_eq!(
             parse_plaintext(true)("`here is code`"),
             Err(NomErr::Error(Error {
                 input: "`here is code`",
-                code: ErrorKind::Eof
+                code: ErrorKind::Not
             }))
         );
         assert_eq!(
             parse_plaintext(true)("[title](https://www.example.com)"),
             Err(NomErr::Error(Error {
                 input: "[title](https://www.example.com)",
-                code: ErrorKind::Eof
+                code: ErrorKind::Not
             }))
         );
         assert_eq!(
             parse_plaintext(true)("![alt text](image.jpg)"),
             Err(NomErr::Error(Error {
                 input: "![alt text](image.jpg)",
-                code: ErrorKind::Eof
+                code: ErrorKind::Not
             }))
         );
         assert_eq!(
