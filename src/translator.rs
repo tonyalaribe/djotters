@@ -1,5 +1,5 @@
-use crate::MarkdownInline;
 use crate::MarkdownText;
+use crate::{Alignment, MarkdownInline};
 use crate::{Markdown, MarkdownAttributes};
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -14,9 +14,55 @@ pub fn translate(md: Vec<Markdown>) -> String {
             Markdown::Line(line, attr) => translate_line(line.to_vec(), attr),
             Markdown::Div(title, content, attr) => translate_div(title, content, attr),
             Markdown::LineBreak => "\n".into(),
+            Markdown::Table(headings, alignments, rows) => {
+                translate_table(headings.to_vec(), alignments.to_vec(), rows.to_vec())
+            }
         })
         .collect::<Vec<String>>()
         .join("")
+}
+
+pub fn translate_alignment(alignment: &Alignment) -> &str {
+    match alignment {
+        Alignment::Left => "left",
+        Alignment::Center => "center",
+        Alignment::Right => "right",
+    }
+}
+
+pub fn translate_table(
+    headers: Vec<MarkdownText>,
+    alignments: Vec<Alignment>,
+    rows: Vec<Vec<MarkdownText>>,
+) -> String {
+    let thead = headers
+        .iter()
+        .map(|header_cell| format!("<th>{}</th>", translate_text(header_cell.to_vec())))
+        .collect::<String>();
+
+    let tbody = rows
+        .iter()
+        .map(|row| {
+            let tr = row
+                .iter()
+                .enumerate()
+                .map(|(i, cell)| {
+                    let align = translate_alignment(&alignments[i]);
+                    format!(
+                        "<td style=\"text-align:{};\">{}</td>",
+                        align,
+                        translate_text(cell.to_vec())
+                    )
+                })
+                .collect::<String>();
+            format!("<tr>{}</tr>", tr)
+        })
+        .collect::<String>();
+
+    format!(
+        "<table><thead><tr>{}</tr></thead><tbody>{}</tbody></table>",
+        thead, tbody
+    )
 }
 
 pub fn translate_div(
@@ -144,7 +190,7 @@ pub fn translate_text(text: MarkdownText) -> String {
             }
             MarkdownInline::Link(text, url, attr) => translate_link(text, url, attr),
             MarkdownInline::Image(text, url, attr) => translate_image(text, url, attr),
-            MarkdownInline::Plaintext(text, attr) => text.to_string(),
+            MarkdownInline::Plaintext(text, _attr) => text.to_string(),
             MarkdownInline::LineBreak => "\n".into(),
             MarkdownInline::Span(text, attr) => {
                 translate_to_element("span", &translate_text(text.to_vec()), attr)
@@ -486,7 +532,6 @@ dsdsdsc sdsd fdfs
         );
     }
 
-
     #[test]
     fn test_e2e_ordered_list_nested() {
         let md_val = r#"
@@ -505,6 +550,21 @@ dsdsdsc sdsd fdfs
         );
     }
 
+    #[test]
+    fn test_e2e_tables() {
+        let md_val = r#"
+| Material | Quantity | Catch-phrase  |
+| -------- | -------: | :-----------: |
+| cotton   |       42 |   Practical!  |
+| wool     |       17 |     Warm!     |
+| silk     |        4 |    Smooth!    |
+        "#;
+        let (_, md) = parse_markdown(md_val.trim()).unwrap();
+        assert_eq!(
+            translate(md),
+            "<ol><li>Link 1</li><li>Link 2 </li><li>Link 3 </li><li>Link 4</li></ol>"
+        );
+    }
 
     // #[test]
     // fn test_translate_link() {

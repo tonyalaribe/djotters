@@ -24,6 +24,11 @@ pub enum Markdown<'a> {
     Codeblock(&'a str, &'a str, MarkdownAttributes<'a>),
     Div(Option<&'a str>, Vec<Markdown<'a>>, MarkdownAttributes<'a>),
     LineBreak,
+    Table(
+        Vec<MarkdownText<'a>>,
+        Vec<Alignment>,
+        Vec<Vec<MarkdownText<'a>>>,
+    ),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -36,6 +41,13 @@ pub enum MarkdownInline<'a> {
     Span(MarkdownText<'a>, MarkdownAttributes<'a>),
     Plaintext(&'a str, MarkdownAttributes<'a>),
     LineBreak,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Alignment {
+    Left,
+    Center,
+    Right,
 }
 
 pub fn markdown(md: &str) -> String {
