@@ -47,7 +47,9 @@ pub fn translate_table(
                 .iter()
                 .enumerate()
                 .map(|(i, cell)| {
-                    let align = translate_alignment(&alignments[i]);
+                    let align = alignments
+                        .get(i)
+                        .map_or("", |alignment| translate_alignment(alignment));
                     format!(
                         "<td style=\"text-align:{};\">{}</td>",
                         align,
