@@ -7,13 +7,16 @@ use nom::{
     branch::alt,
     bytes::complete::{is_not, tag, take_till, take_until, take_while, take_while1},
     character::{
-        complete::{alphanumeric1, anychar, char, line_ending, multispace0, multispace1},
+        complete::{
+            alphanumeric1, anychar, char, line_ending, multispace0, multispace1, newline, space0,
+        },
         is_digit,
     },
-    combinator::{eof, map, map_res, opt, peek, recognize, rest, verify},
+    combinator::{cut, eof, map, map_res, opt, peek, recognize, rest, verify},
+    error::ParseError,
     multi::{many0, many1, many_till, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
-    IResult, Parser,
+    AsChar, IResult, InputTakeAtPosition, Parser,
 };
 use slugify::slugify;
 use std::collections::HashMap;
@@ -97,7 +100,6 @@ fn match_surround_text<'a>(
         || text.ends_with('\u{a0}') // Unicode space
         || text.starts_with('\u{a0}') // Unicode space
         || text.contains("\n")
-        // Should not contain a line break
         {
             Err(nom::Err::Error(nom::error::Error::new(
                 input,
@@ -418,19 +420,71 @@ fn parse_code_block_lang(i: &str) -> IResult<&str, (&str, MarkdownAttributes)> {
 
 fn parse_cell(input: &str) -> IResult<&str, MarkdownText> {
     map(
-        delimited(char(' '), take_till(|c| c == '|'), char(' ')),
-        |s: &str| parse_markdown_text(false)(s).unwrap().1,
+        delimited(
+            space0,
+            verify(take_till(|c| c == '|'), |s: &str| !s.trim().is_empty()),
+            space0,
+        ),
+        |s: &str| {
+            parse_markdown_text(false)(s.trim()).unwrap_or_default().1 // Trim the text to remove leading/trailing spaces
+        },
     )(input)
 }
 
-fn parse_row(input: &str) -> IResult<&str, Vec<MarkdownText>> {
-    delimited(char('|'), separated_list1(char('|'), parse_cell), char('|'))(input)
+// fn parse_row<'a, O, F>(cell_parser: F) -> impl Fn(&'a str) -> IResult<&'a str, Vec<O>> + 'a
+// where
+//     F: Fn(&'a str) -> IResult<&'a str, O> + 'a,
+// {
+//     move |input: &'a str| {
+//         delimited(
+//             char('|'),
+//             separated_list1(char('|'), &cell_parser),
+//             // cut(terminated(multispace0, char('|')))
+//             preceded(space0, char('|')),
+//         )(input.trim())
+//     }
+// }
+// fn parse_row<'a, O, F>(cell_parser: F) -> impl Fn(&'a str) -> IResult<&'a str, Vec<O>> + 'a
+// where
+//     F: Fn(&'a str) -> IResult<&'a str, O> + 'a,
+// {
+//     move |input: &'a str| {
+//         delimited(
+//             char('|'),
+//             separated_list1(char('|'), &cell_parser),
+//             delimited(space0, char('|'), peek(char('\n'))),
+//         )(input.trim_end())
+//     }
+// }
+fn parse_row<'a, O, F>(cell_parser: F) -> impl Fn(&'a str) -> IResult<&'a str, Vec<O>> + 'a
+where
+    F: Fn(&'a str) -> IResult<&'a str, O> + 'a,
+    O: std::fmt::Debug,
+{
+    move |input: &'a str| {
+        let (input, _) = char('|')(input)?;
+        let (input, cells) = separated_list1(char('|'), &cell_parser)(input)?;
+        let (input, matched) = opt(pair(char('|'), opt(peek(char('\n')))))(input)?;
+        Ok((input, cells))
+    }
 }
 
 fn parse_alignment(input: &str) -> IResult<&str, Alignment> {
+    if input.is_empty() {
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::NonEmpty,
+        )));
+    }
     map(
-        tuple((opt(char(':')), take_till(|c| c != '-'), opt(char(':')))),
-        |(left, _, right)| match (left, right) {
+        tuple((
+            space0,
+            opt(char::<&str, nom::error::Error<&str>>(':')),
+            recognize(many1(char('-'))),
+            opt(char::<&str, nom::error::Error<&str>>(':')),
+            space0,
+        )),
+        |(_, left, _, right, _)| match (left, right) {
             (Some(_), Some(_)) => Alignment::Center,
             (Some(_), None) => Alignment::Left,
             (None, Some(_)) => Alignment::Right,
@@ -444,18 +498,14 @@ fn parse_table(
 ) -> IResult<&str, (Vec<MarkdownText>, Vec<Alignment>, Vec<Vec<MarkdownText>>)> {
     map(
         tuple((
-            parse_row,
+            parse_row(parse_cell),
             char('\n'),
-            delimited(
-                char('|'),
-                separated_list1(char('|'), parse_alignment),
-                char('|'),
-            ),
+            parse_row(parse_alignment),
             char('\n'),
-            separated_list1(char('\n'), parse_row),
+            separated_list1(char('\n'), parse_row(parse_cell)),
         )),
         |(headers, _, alignments, _, rows)| (headers, alignments, rows),
-    )(input)
+    )(input.trim())
 }
 
 #[cfg(test)]
@@ -560,12 +610,6 @@ mod tests {
             parse_markdown_inline(false)("*here is \nitalic*"),
             Ok(("\nitalic*", MarkdownInline::Plaintext("*here is ", None)))
         )
-    }
-
-    #[test]
-    fn test_parse_markdown_text1() {
-        let resp = parse_markdown_text(false)("italic");
-        println!("{:?}", resp);
     }
 
     #[test]
@@ -861,13 +905,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_parse_markdown_document() {
-        let document = "# Article name from Example site
-## Current Category: BlaBla";
-        let result = parse_markdown(document);
-        println!("{result:?}")
-    }
 
     #[test]
     fn test_parse_markdown_document2() {
@@ -1005,6 +1042,97 @@ mod tests {
                 code: ErrorKind::Eof
             }))
         );
+    }
+
+    #[test]
+    fn test_parse_table() {
+        env_logger::init();
+        // assert_eq!(
+        //     parse_row(parse_cell)("| a | b | c |"),
+        //     Ok((
+        //         "",
+        //         vec![
+        //             vec![MarkdownInline::Plaintext("a", None)],
+        //             vec![MarkdownInline::Plaintext("b", None)],
+        //             vec![MarkdownInline::Plaintext("c", None)],
+        //         ]
+        //     ))
+        // );
+        // assert_eq!(parse_alignment("--------"), Ok(("", Alignment::Left)));
+        // assert_eq!(parse_alignment(":--------"), Ok(("", Alignment::Left)));
+        // assert_eq!(parse_alignment("--------:"), Ok(("", Alignment::Right)));
+        // assert_eq!(parse_alignment(":--------:"), Ok(("", Alignment::Center)));
+        // assert_eq!(parse_alignment(" :--------: "), Ok(("", Alignment::Center)));
+
+        // assert_eq!(
+        //     parse_row(parse_alignment)("| -------- | -------: | :-----------: |"),
+        //     Ok((
+        //         "",
+        //         vec![Alignment::Left, Alignment::Right, Alignment::Center]
+        //     ))
+        // );
+
+        assert_eq!(
+            parse_row(parse_alignment)("| -------- | -------: |\n| :-----------: |\n"),
+            Ok((
+                "\n| :-----------: |\n",
+                vec![Alignment::Left, Alignment::Right]
+            ))
+        );
+
+        assert_eq!(
+            separated_list1(char('\n'), parse_row(parse_cell))("| a | b |\n| c | d |"),
+            Ok((
+                "",
+                vec![
+                    vec![
+                        vec![MarkdownInline::Plaintext("a", None)],
+                        vec![MarkdownInline::Plaintext("b", None)],
+                    ],
+                    vec![
+                        vec![MarkdownInline::Plaintext("c", None)],
+                        vec![MarkdownInline::Plaintext("d", None)]
+                    ]
+                ]
+            ))
+        );
+
+        let md_val = r#"| Material | Quantity | Catch-phrase  |
+| -------- | -------: | :-----------: |
+| cotton   |       42 |   Practical!  |
+| wool     |       17 |     Warm!     |
+| silk     |        4 |    Smooth!    |"#;
+        assert_eq!(
+            parse_table(md_val),
+            Ok((
+                "",
+                (
+                    vec![
+                        vec![MarkdownInline::Plaintext("Material", None)],
+                        vec![MarkdownInline::Plaintext("Quantity", None)],
+                        vec![MarkdownInline::Plaintext("Catch-phrase", None)],
+                    ],
+                    vec![Alignment::Left, Alignment::Right, Alignment::Center],
+                    vec![
+                        vec![
+                            vec![MarkdownInline::Plaintext("cotton", None)],
+                            vec![MarkdownInline::Plaintext("42", None)],
+                            vec![MarkdownInline::Plaintext("Practical!", None)],
+                        ],
+                        vec![
+                            vec![MarkdownInline::Plaintext("wool", None)],
+                            vec![MarkdownInline::Plaintext("17", None)],
+                            vec![MarkdownInline::Plaintext("Warm!", None)],
+                        ],
+                        vec![
+                            vec![MarkdownInline::Plaintext("silk", None)],
+                            vec![MarkdownInline::Plaintext("4", None)],
+                            vec![MarkdownInline::Plaintext("Smooth!", None)],
+                        ],
+                    ],
+                ),
+            )),
+        )
     }
 
     //     #[test]

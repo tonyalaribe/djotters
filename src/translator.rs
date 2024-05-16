@@ -562,7 +562,12 @@ dsdsdsc sdsd fdfs
         let (_, md) = parse_markdown(md_val.trim()).unwrap();
         assert_eq!(
             translate(md),
-            "<ol><li>Link 1</li><li>Link 2 </li><li>Link 3 </li><li>Link 4</li></ol>"
+            "<table><thead><tr><th>Material</th><th>Quantity</th><th>Catch-phrase</th></tr></thead><tbody><tr>\
+                <td style=\"text-align:left;\">cotton</td><td style=\"text-align:right;\">42</td>\
+                <td style=\"text-align:center;\">Practical!</td></tr>\
+                <tr><td style=\"text-align:left;\">wool</td><td style=\"text-align:right;\">17</td>\
+                <td style=\"text-align:center;\">Warm!</td></tr><tr><td style=\"text-align:left;\">silk</td>\
+                <td style=\"text-align:right;\">4</td><td style=\"text-align:center;\">Smooth!</td></tr></tbody></table>"
         );
     }
 
