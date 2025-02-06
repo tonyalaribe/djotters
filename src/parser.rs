@@ -496,15 +496,18 @@ fn parse_alignment(input: &str) -> IResult<&str, Alignment> {
 fn parse_table(
     input: &str,
 ) -> IResult<&str, (Vec<MarkdownText>, Vec<Alignment>, Vec<Vec<MarkdownText>>)> {
-    map(
-        tuple((
-            parse_row(parse_cell),
-            char('\n'),
-            parse_row(parse_alignment),
-            char('\n'),
-            separated_list1(char('\n'), parse_row(parse_cell)),
-        )),
-        |(headers, _, alignments, _, rows)| (headers, alignments, rows),
+    terminated(
+        map(
+            tuple((
+                parse_row(parse_cell),
+                char('\n'),
+                parse_row(parse_alignment),
+                char('\n'),
+                separated_list1(char('\n'), parse_row(parse_cell)),
+            )),
+            |(headers, _, alignments, _, rows)| (headers, alignments, rows),
+        ),
+        block_ending,
     )(input.trim())
 }
 
@@ -905,7 +908,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_parse_markdown_document2() {
         let document = "# Article name from Example site
@@ -1132,7 +1134,54 @@ mod tests {
                     ],
                 ),
             )),
-        )
+        );
+
+    }
+
+    #[test]
+    fn parse_table_blocks(){
+        let md_val = r#"| Material | Quantity | Catch-phrase  |
+| -------- | -------: | :-----------: |
+| silk     |        4 |    Smooth!    |
+
+
+# Title
+
+"#;
+        println!("{:?}", parse_markdown(md_val));
+
+        // assert_eq!(
+        //     parse_markdown(md_val),
+        //     None
+        //     // Ok((
+        //     //     "",
+        //     //     vec![(
+        //     //         vec![
+        //     //             vec![MarkdownInline::Plaintext("Material", None)],
+        //     //             vec![MarkdownInline::Plaintext("Quantity", None)],
+        //     //             vec![MarkdownInline::Plaintext("Catch-phrase", None)],
+        //     //         ],
+        //     //         vec![Alignment::Left, Alignment::Right, Alignment::Center],
+        //     //         vec![
+        //     //             vec![
+        //     //                 vec![MarkdownInline::Plaintext("cotton", None)],
+        //     //                 vec![MarkdownInline::Plaintext("42", None)],
+        //     //                 vec![MarkdownInline::Plaintext("Practical!", None)],
+        //     //             ],
+        //     //             vec![
+        //     //                 vec![MarkdownInline::Plaintext("wool", None)],
+        //     //                 vec![MarkdownInline::Plaintext("17", None)],
+        //     //                 vec![MarkdownInline::Plaintext("Warm!", None)],
+        //     //             ],
+        //     //             vec![
+        //     //                 vec![MarkdownInline::Plaintext("silk", None)],
+        //     //                 vec![MarkdownInline::Plaintext("4", None)],
+        //     //                 vec![MarkdownInline::Plaintext("Smooth!", None)],
+        //     //             ],
+        //     //         ]
+        //     //     ),],
+        //     // )),
+        // )
     }
 
     //     #[test]
