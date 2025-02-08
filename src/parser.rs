@@ -5,9 +5,12 @@ use crate::{translator, Alignment};
 use crate::{Markdown, MarkdownAttributes};
 use nom::{
     branch::alt,
-    bytes::complete::{escaped, is_not, tag, take_till, take_until, take_until1, take_while, take_while1},
+    bytes::complete::{
+        escaped, is_not, tag, take_till, take_until, take_until1, take_while, take_while1,
+    },
     character::complete::{
-        alphanumeric1, anychar, char, line_ending, multispace0, multispace1, newline, not_line_ending, one_of, space0, space1
+        alphanumeric1, anychar, char, line_ending, multispace0, multispace1, newline,
+        not_line_ending, one_of, space0, space1,
     },
     combinator::{eof, map, map_res, not, opt, peek, recognize, rest, value, verify},
     multi::{many0, many1, many_till, separated_list0, separated_list1},
@@ -194,7 +197,7 @@ fn parse_key_value_pair(input: &str) -> IResult<&str, (&str, &str)> {
     let parse_quoted_value = delimited(
         char('"'),
         escaped(is_not("\\\""), '\\', one_of("\"\\")),
-        char('"')
+        char('"'),
     );
 
     let parse_value = alt((parse_quoted_value, alphanumeric1));
@@ -322,81 +325,69 @@ fn parse_plaintext(
     }
 }
 
+macro_rules! markup {
+    ($allow:expr, $open:expr, $close:expr, $variant:ident) => {
+        map(
+            match_surround2_with_attrs($allow, $open, $close),
+            |(s, attr)| MarkdownInline::$variant(s, attr),
+        )
+    };
+}
+
 fn parse_markdown_not_plain(
     accept_linebreak: bool,
 ) -> impl Fn(&str) -> IResult<&str, MarkdownInline> {
     move |i: &str| {
         alt((
+            // Plaintext.
             map(
                 (take_while1(|c: char| c.is_alphanumeric()), parse_attributes),
                 |(s, attr)| {
                     MarkdownInline::Plaintext(s.into(), Some(attr).filter(|m| !m.is_empty()))
                 },
             ),
-            map(
-                match_surround2_with_attrs(true, "{*", "*}"),
-                |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Bold(s, attr),
-            ),
-            map(
-                match_surround2_with_attrs(true, "{=", "=}"),
-                |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Highlight(s, attr),
-            ),
-            map(
-                match_surround2_with_attrs(true, "{_", "_}"),
-                |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Italic(s, attr),
-            ),
-            map(
-                match_surround2_with_attrs(true, "*", "*"),
-                |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Bold(s, attr),
-            ),
-            map(
-                match_surround2_with_attrs(true, "_", "_"),
-                |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Italic(s, attr),
-            ),
-            map(
-                match_surround2_with_attrs(false, "`", "`"),
-                |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::InlineCode(s, attr),
-            ),
-            // TODO: remove. not needed for djot
-            map(
-                match_surround2_with_attrs(true, "**", "**"),
-                |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Bold(s, attr),
-            ),
-            // TODO: remove. not needed for djot
-            map(
-                match_surround2_with_attrs(true, "__", "__"),
-                |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Bold(s, attr),
-            ),
-            map(
-                parse_image,
-                |(tag, url, attr): (&str, &str, MarkdownAttributes)| {
-                    MarkdownInline::Image(tag.into(), url.into(), attr)
-                },
-            ),
+            markup!(true, "{*", "*}", Bold),
+            markup!(true, "*", "*", Bold),
+            markup!(true, "{=", "=}", Highlight),
+            markup!(true, "~", "~", Subscript),
+            markup!(true, "{~", "~}", Subscript),
+            markup!(true, "^", "^", Superscript),
+            markup!(true, "{^", "^}", Superscript),
+            markup!(true, "{+", "+}", Insert),
+            markup!(true, "{-", "-}", Delete),
+            markup!(true, "{_", "_}", Italic),
+            markup!(true, "_", "_", Italic),
+            // Inline code.
+            map(match_surround2_with_attrs(false, "`", "`"), |(s, attr)| {
+                MarkdownInline::InlineCode(s, attr)
+            }),
+            // Legacy markers.
+            markup!(true, "**", "**", Bold),
+            markup!(true, "__", "__", Bold),
+            // Image.
+            map(parse_image, |(tag, url, attr)| {
+                MarkdownInline::Image(tag.into(), url.into(), attr)
+            }),
             map(tag("\\\n"), |_| MarkdownInline::LineBreak),
-            map_res(terminated(tag("\n"), peek(is_not("\n"))), |_| {
+            map_res(terminated(tag("\n"), peek(is_not("\n"))), move |_| {
                 if accept_linebreak {
                     Ok(MarkdownInline::LineBreak)
                 } else {
-                    Err(nom::Err::<nom::error::Error<&str>>::Error(
-                        nom::error::Error::new(i, nom::error::ErrorKind::Char),
-                    ))
+                    Err(nom::Err::<nom::error::Error<&str>>::Error(nom::error::Error::new(
+                        i,
+                        nom::error::ErrorKind::Char,
+                    )))
                 }
             }),
-            map(
-                parse_link,
-                |(tag, url, attr): (&str, &str, MarkdownAttributes)| {
-                    MarkdownInline::Link(tag.into(), url.into(), attr)
-                },
-            ),
-            map(
-                match_surround2_with_attrs(true, "[", "]"),
-                |(s, attr): (MarkdownText, MarkdownAttributes)| {
-                    MarkdownInline::Span(s, attr.filter(|m| !m.is_empty()))
-                },
-            ),
-        ))
-        .parse(i)
+            // Link.
+            map(parse_link, |(tag, url, attr)| {
+                MarkdownInline::Link(tag.into(), url.into(), attr)
+            }),
+            // Span.
+            map(match_surround2_with_attrs(true, "[", "]"), |(s, attr)| {
+                MarkdownInline::Span(s, attr.filter(|m| !m.is_empty()))
+            }),
+        )).parse(i)
     }
 }
 

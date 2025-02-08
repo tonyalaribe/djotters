@@ -189,6 +189,10 @@ pub fn translate_text(text: MarkdownText) -> String {
     text.iter()
         .map(|part| match part {
             MarkdownInline::Bold(text, attr) => translate_to_element("strong", &translate_text(text.to_vec()), attr),
+            MarkdownInline::Superscript(text, attr) => translate_to_element("sup", &translate_text(text.to_vec()), attr),
+            MarkdownInline::Subscript(text, attr) => translate_to_element("sub", &translate_text(text.to_vec()), attr),
+            MarkdownInline::Insert(text, attr) => translate_to_element("ins", &translate_text(text.to_vec()), attr),
+            MarkdownInline::Delete(text, attr) => translate_to_element("del", &translate_text(text.to_vec()), attr),
             MarkdownInline::Highlight(text, attr) => translate_to_element("mark", &translate_text(text.to_vec()), attr),
             MarkdownInline::Italic(text, attr) => translate_to_element("em", &translate_text(text.to_vec()), attr),
             MarkdownInline::InlineCode(code, attr) => translate_to_element("code", &translate_text(code.to_vec()), attr),
@@ -213,6 +217,10 @@ pub fn translate_text_raw(text: MarkdownText) -> String {
     text.iter()
         .map(|part| match part {
             MarkdownInline::Bold(text, _attr) => translate_text_raw(text.to_vec()),
+            MarkdownInline::Superscript(text, _attr) => translate_text_raw(text.to_vec()),
+            MarkdownInline::Subscript(text, _attr) => translate_text_raw(text.to_vec()),
+            MarkdownInline::Insert(text, _attr) => translate_text_raw(text.to_vec()),
+            MarkdownInline::Delete(text, _attr) => translate_text_raw(text.to_vec()),
             MarkdownInline::Highlight(text, _attr) => translate_text_raw(text.to_vec()),
             MarkdownInline::Italic(text, _attr) => translate_text(text.to_vec()),
             MarkdownInline::InlineCode(code, _attr) => translate_text(code.to_vec()),
