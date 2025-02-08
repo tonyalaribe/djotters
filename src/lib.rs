@@ -7,39 +7,40 @@ pub mod translator;
 pub use parser::*;
 pub use translator::*;
 
-pub type MarkdownText<'a> = Vec<MarkdownInline<'a>>;
+pub type MarkdownText = Vec<MarkdownInline>;
 
 // To hold parsed markdown attrributes. eg:
 // ```
 //  { #idValue .className1 .className2 class="extraclass3" data-extra-attribute="attribute value" }
 // ```
-pub type MarkdownAttributes<'a> = Option<HashMap<&'a str, String>>;
+pub type MarkdownAttributes = Option<HashMap<String, String>>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Markdown<'a> {
-    Heading(usize, MarkdownText<'a>, MarkdownAttributes<'a>),
-    OrderedList(Vec<MarkdownText<'a>>, MarkdownAttributes<'a>),
-    UnorderedList(Vec<MarkdownText<'a>>, MarkdownAttributes<'a>),
-    Line(MarkdownText<'a>, MarkdownAttributes<'a>),
-    Codeblock(&'a str, &'a str, MarkdownAttributes<'a>),
-    Div(Option<&'a str>, Vec<Markdown<'a>>, MarkdownAttributes<'a>),
+pub enum Markdown {
+    Heading(usize, MarkdownText, MarkdownAttributes),
+    OrderedList(Vec<MarkdownText>, MarkdownAttributes),
+    UnorderedList(Vec<MarkdownText>, MarkdownAttributes),
+    BlockQuotes(Vec<Markdown>, MarkdownAttributes),
+    Line(MarkdownText, MarkdownAttributes),
+    Codeblock(String, String, MarkdownAttributes),
+    Div(Option<String>, Vec<Markdown>, MarkdownAttributes),
     LineBreak,
     Table(
-        Vec<MarkdownText<'a>>,
+        Vec<MarkdownText>,
         Vec<Alignment>,
-        Vec<Vec<MarkdownText<'a>>>,
+        Vec<Vec<MarkdownText>>,
     ),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum MarkdownInline<'a> {
-    Link(&'a str, &'a str, MarkdownAttributes<'a>),
-    Image(&'a str, &'a str, MarkdownAttributes<'a>),
-    InlineCode(MarkdownText<'a>, MarkdownAttributes<'a>),
-    Bold(MarkdownText<'a>, MarkdownAttributes<'a>),
-    Italic(MarkdownText<'a>, MarkdownAttributes<'a>),
-    Span(MarkdownText<'a>, MarkdownAttributes<'a>),
-    Plaintext(&'a str, MarkdownAttributes<'a>),
+pub enum MarkdownInline {
+    Link(String, String, MarkdownAttributes),
+    Image(String, String, MarkdownAttributes),
+    InlineCode(MarkdownText, MarkdownAttributes),
+    Bold(MarkdownText, MarkdownAttributes),
+    Italic(MarkdownText, MarkdownAttributes),
+    Span(MarkdownText, MarkdownAttributes),
+    Plaintext(String, MarkdownAttributes),
     LineBreak,
 }
 

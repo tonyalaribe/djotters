@@ -7,9 +7,10 @@ use nom::{
     branch::alt,
     bytes::complete::{is_not, tag, take_till, take_until, take_while, take_while1},
     character::complete::{
-        alphanumeric1, anychar, char, line_ending, multispace0, multispace1, newline, space0,
+        alphanumeric1, anychar, char, line_ending, multispace0, multispace1, newline,
+        not_line_ending, space0, space1,
     },
-    combinator::{eof, map, map_res, opt, peek, recognize, rest, verify},
+    combinator::{eof, map, map_res, not, opt, peek, recognize, rest, value, verify},
     multi::{many0, many1, many_till, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     IResult, Parser,
@@ -17,8 +18,11 @@ use nom::{
 use slugify::slugify;
 use std::collections::HashMap;
 
-pub fn parse_markdown<'a>(i: &'a str) -> IResult<&'a str, Vec<Markdown<'a>>> {
+pub fn parse_markdown<'a>(i: &'a str) -> IResult<&'a str, Vec<Markdown>> {
     many1(alt((
+        // check blockquote first before other block items, since they might be contained in a
+        // blockquote
+        map(parse_blockquote, |e| Markdown::BlockQuotes(e, None)),
         // Should be replaced. Hard linebreak is \<newline>
         map(tag("\n\n"), |_e| Markdown::LineBreak),
         map(parse_header, |mut e| {
@@ -28,30 +32,83 @@ pub fn parse_markdown<'a>(i: &'a str) -> IResult<&'a str, Vec<Markdown<'a>>> {
         map(parse_unordered_list, |e| Markdown::UnorderedList(e.1, e.0)),
         map(parse_ordered_list, |e| Markdown::OrderedList(e.1, e.0)),
         map(parse_code_block, |e| {
-            Markdown::Codeblock(e.0 .0, e.1, e.0 .1)
+            Markdown::Codeblock(e.0 .0.into(), e.1.into(), e.0 .1)
         }),
-        map(parse_div, |e| Markdown::Div(e.0, e.1, e.2)),
+        map(parse_div, |e| {
+            Markdown::Div(e.0.map(|v| v.into()), e.1, e.2)
+        }),
         map(parse_markdown_paragraph, |e| Markdown::Line(e.1, e.0)),
     )))
     .parse(i)
 }
 
-pub fn set_or_check_header_id<'a>(
-    attrs: &mut Option<HashMap<&'a str, String>>,
-    content: Vec<MarkdownInline<'a>>,
-) -> MarkdownAttributes<'a> {
+/// Parse a djot blockquote using a declarative style.
+/// The blockquote is a series of lines:
+///   - The first line must begin with `>` (optionally followed by a space).
+///   - Subsequent lines are either marker lines (starting with `>`)
+///     or lazy continuation lines (which must not start with `>`).
+pub fn parse_blockquote(i: &str) -> IResult<&str, Vec<Markdown>> {
+    // The first line must be a marker line.
+    let (i, first_line) = parse_marker_line(i)?;
+
+    // Wrap the not_line_ending so that it fails if it returns an empty string.
+    let non_empty_line = verify(not_line_ending, |s: &str| !s.is_empty());
+
+    let (i, mut lines) = many0(alt((
+        parse_marker_line,
+        delimited(
+            peek(not((tag(">"), space1))),
+            non_empty_line,
+            alt((line_ending, eof)),
+        ),
+    )))
+    .parse(i)?;
+    lines.insert(0, first_line);
+
+    let joined = lines.join("\n");
+    if joined == "" {
+        Ok((i, vec![]))
+    } else {
+        let x = parse_markdown(&joined);
+        println!("Error3: => {joined:?} =>{x:?}");
+        // Parse the joined content as block-level markdown.
+        let Ok((_rest, md)) = parse_markdown(&joined) else {
+            todo!()
+        };
+        Ok((i, md))
+    }
+}
+
+/// Parse a blockquote “marker line” that starts with “>” (optionally followed by a space)
+/// and then captures the rest of the line.
+fn parse_marker_line(i: &str) -> IResult<&str, &str> {
+    alt((
+        value("", (tag(">"), space0, alt((line_ending, eof)))),
+        delimited(
+            (tag(">"), space1::<&str, _>),
+            not_line_ending,
+            alt((line_ending, eof)),
+        ),
+    ))
+    .parse(i)
+}
+
+pub fn set_or_check_header_id(
+    attrs: &mut Option<HashMap<String, String>>,
+    content: Vec<MarkdownInline>,
+) -> MarkdownAttributes {
     // Check if attrs is Some and if it contains the key "id"
     if let Some(ref mut attrs_map) = attrs {
         if !attrs_map.contains_key("id") {
             // If "id" is not present, insert a new "id" with the slugified content
             let slug = slugify_md(content); // Assuming slugify_md is defined elsewhere
-            attrs_map.insert("id", slug);
+            attrs_map.insert("id".into(), slug);
         }
     } else {
         // If attrs is None, create a new HashMap and insert the "id"
         let mut new_attrs = HashMap::new();
         let slug = slugify_md(content); // Assuming slugify_md is defined elsewhere
-        new_attrs.insert("id", slug);
+        new_attrs.insert("id".into(), slug);
         *attrs = Some(new_attrs);
     }
 
@@ -143,12 +200,12 @@ fn parse_key_value_pair(input: &str) -> IResult<&str, (&str, &str)> {
     separated_pair(parse_key, tag("="), parse_value).parse(input)
 }
 
-fn vec_to_hashmap_concat<'a>(vec: Vec<(&'a str, &str)>) -> HashMap<&'a str, String> {
+fn vec_to_hashmap_concat<'a>(vec: Vec<(&'a str, &str)>) -> HashMap<String, String> {
     let mut hashmap = HashMap::new();
 
     for (key, value) in vec {
         hashmap
-            .entry(key)
+            .entry(key.into())
             .and_modify(|e| *e = format!("{} {}", e, value))
             .or_insert(value.to_string());
     }
@@ -156,7 +213,7 @@ fn vec_to_hashmap_concat<'a>(vec: Vec<(&'a str, &str)>) -> HashMap<&'a str, Stri
     hashmap
 }
 
-fn parse_attributes(input: &str) -> IResult<&str, HashMap<&str, String>> {
+fn parse_attributes(input: &str) -> IResult<&str, HashMap<String, String>> {
     let parse_attribute = alt((parse_id, parse_class, parse_key_value_pair));
     let parse_attributes = many0(delimited(multispace0, parse_attribute, multispace0));
 
@@ -172,14 +229,14 @@ fn match_surround2_with_attrs<'a>(
     recurse: bool,
     opener: &'a str,
     closer: &'a str,
-) -> impl Fn(&'a str) -> IResult<&'a str, (MarkdownText<'a>, MarkdownAttributes<'a>)> + 'a {
+) -> impl Fn(&'a str) -> IResult<&'a str, (MarkdownText, MarkdownAttributes)> {
     move |input: &'a str| {
         let (remaining, text) = match_surround_text(input, opener, closer)?;
         let (remaining, attrs) = opt(parse_attributes).parse(remaining)?;
         let (_, child_elements) = if recurse {
             parse_markdown_text(false)(text)?
         } else {
-            ("", vec![MarkdownInline::Plaintext(text, None)])
+            ("", vec![MarkdownInline::Plaintext(text.into(), None)])
         };
         Ok((remaining, (child_elements, attrs)))
     }
@@ -294,7 +351,7 @@ fn parse_markdown_not_plain(
             map(
                 parse_image,
                 |(tag, url, attr): (&str, &str, MarkdownAttributes)| {
-                    MarkdownInline::Image(tag, url, attr)
+                    MarkdownInline::Image(tag.into(), url.into(), attr)
                 },
             ),
             map(tag("\\\n"), |_| MarkdownInline::LineBreak),
@@ -310,7 +367,7 @@ fn parse_markdown_not_plain(
             map(
                 parse_link,
                 |(tag, url, attr): (&str, &str, MarkdownAttributes)| {
-                    MarkdownInline::Link(tag, url, attr)
+                    MarkdownInline::Link(tag.into(), url.into(), attr)
                 },
             ),
             map(
@@ -328,7 +385,7 @@ fn parse_markdown_inline(accept_linebreak: bool) -> impl Fn(&str) -> IResult<&st
             parse_markdown_not_plain(accept_linebreak),
             map(
                 parse_plaintext(accept_linebreak),
-                |(s, attr): (&str, MarkdownAttributes)| MarkdownInline::Plaintext(s, attr),
+                |(s, attr): (&str, MarkdownAttributes)| MarkdownInline::Plaintext(s.into(), attr),
             ),
         ))
         .parse(i)
@@ -526,7 +583,7 @@ mod tests {
         inlines
             .iter()
             .map(|m| match m {
-                MarkdownInline::Plaintext(s, _) => *s,
+                MarkdownInline::Plaintext(s, _) => s,
                 _ => "",
             })
             .collect::<String>()
@@ -539,20 +596,20 @@ mod tests {
             (
                 "{#header .title attr=\"value\"}",
                 HashMap::from([
-                    ("id", "header".to_string()),
-                    ("class", "title".to_string()),
-                    ("attr", "value".to_string()),
+                    ("id".to_string(), "header".to_string()),
+                    ("class".to_string(), "title".to_string()),
+                    ("attr".to_string(), "value".to_string()),
                 ]),
             ),
             (
                 "{.class1 .class2}",
-                HashMap::from([("class", "class1 class2".to_string())]),
+                HashMap::from([("class".to_string(), "class1 class2".to_string())]),
             ),
             (
                 "{#id1 .class1 .class2}",
                 HashMap::from([
-                    ("id", "id1".to_string()),
-                    ("class", "class1 class2".to_string()),
+                    ("id".to_string(), "id1".to_string()),
+                    ("class".to_string(), "class1 class2".to_string()),
                 ]),
             ),
         ];
@@ -568,16 +625,19 @@ mod tests {
         let cases = vec![
             (
                 "*bold*",
-                MarkdownInline::Bold(vec![MarkdownInline::Plaintext("bold", None)], None),
+                MarkdownInline::Bold(vec![MarkdownInline::Plaintext("bold".into(), None)], None),
             ),
             (
                 "_italic_",
-                MarkdownInline::Italic(vec![MarkdownInline::Plaintext("italic", None)], None),
+                MarkdownInline::Italic(
+                    vec![MarkdownInline::Plaintext("italic".into(), None)],
+                    None,
+                ),
             ),
             (
                 "*bold*{#x}",
                 MarkdownInline::Bold(
-                    vec![MarkdownInline::Plaintext("bold", None)],
+                    vec![MarkdownInline::Plaintext("bold".into(), None)],
                     Some(HashMap::from([("id".into(), "x".into())])),
                 ),
             ),
@@ -592,28 +652,29 @@ mod tests {
         let link_cases = vec![(
             "[link](http://example.com){target=\"_blank\"}",
             MarkdownInline::Link(
-                "link",
-                "http://example.com",
+                "link".into(),
+                "http://example.com".into(),
                 Some(HashMap::from([("target".into(), "_blank".into())])),
             ),
         )];
         for (input, expected) in link_cases {
             let res = parse_link(input)
-                .map(|(_rem, (tag, url, attr))| MarkdownInline::Link(tag, url, attr));
+                .map(|(_rem, (tag, url, attr))| MarkdownInline::Link(tag.into(), url.into(), attr));
             assert_eq!(res, Ok(expected));
         }
 
         let image_cases = vec![(
             "![alt](img.png){.img}",
             MarkdownInline::Image(
-                "alt",
-                "img.png",
+                "alt".into(),
+                "img.png".into(),
                 Some(HashMap::from([("class".into(), "img".into())])),
             ),
         )];
         for (input, expected) in image_cases {
-            let res = parse_image(input)
-                .map(|(_rem, (alt, url, attr))| MarkdownInline::Image(alt, url, attr));
+            let res = parse_image(input).map(|(_rem, (alt, url, attr))| {
+                MarkdownInline::Image(alt.into(), url.into(), attr)
+            });
             assert_eq!(res, Ok(expected));
         }
     }
@@ -794,7 +855,7 @@ Div content line 2.
             parse_markdown_inline(false)("Text without markup{#id}"),
             Ok((
                 "",
-                MarkdownInline::Plaintext("Text without markup{#id}", None)
+                MarkdownInline::Plaintext("Text without markup{#id}".into(), None)
             ))
         );
     }
@@ -803,7 +864,7 @@ Div content line 2.
     #[test]
     fn stray_attributes_in_plaintext() {
         let input = "This is a test {#test}";
-        let expected = MarkdownInline::Plaintext("This is a test {#test}", None);
+        let expected = MarkdownInline::Plaintext("This is a test {#test}".into(), None);
         assert_eq!(parse_markdown_inline(false)(input), Ok(("", expected)));
     }
 
@@ -812,7 +873,7 @@ Div content line 2.
     fn inline_markup_with_attributes() {
         let input = "*bold text*{.highlight}";
         let expected = MarkdownInline::Bold(
-            vec![MarkdownInline::Plaintext("bold text", None)],
+            vec![MarkdownInline::Plaintext("bold text".into(), None)],
             Some(HashMap::from([("class".into(), "highlight".into())])),
         );
         // Here we call the non-plaintext parser so that the attribute is attached.
