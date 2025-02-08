@@ -5,13 +5,12 @@ use crate::{translator, Alignment};
 use crate::{Markdown, MarkdownAttributes};
 use nom::{
     branch::alt,
-    bytes::complete::{is_not, tag, take_till, take_until, take_while, take_while1},
+    bytes::complete::{escaped, is_not, tag, take_till, take_until, take_until1, take_while, take_while1},
     character::complete::{
-        alphanumeric1, anychar, char, line_ending, multispace0, multispace1, newline,
-        not_line_ending, space0, space1,
+        alphanumeric1, anychar, char, line_ending, multispace0, multispace1, newline, not_line_ending, one_of, space0, space1
     },
     combinator::{eof, map, map_res, not, opt, peek, recognize, rest, value, verify},
-    multi::{many0, many1, many_till, separated_list1},
+    multi::{many0, many1, many_till, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     IResult, Parser,
 };
@@ -70,7 +69,6 @@ pub fn parse_blockquote(i: &str) -> IResult<&str, Vec<Markdown>> {
         Ok((i, vec![]))
     } else {
         let x = parse_markdown(&joined);
-        println!("Error3: => {joined:?} =>{x:?}");
         // Parse the joined content as block-level markdown.
         let Ok((_rest, md)) = parse_markdown(&joined) else {
             todo!()
@@ -175,39 +173,47 @@ fn match_surround_text<'a>(
 }
 
 fn parse_id(input: &str) -> IResult<&str, (&str, &str)> {
-    let (remaining, id) = delimited(
+    let (remaining, id) = preceded(
         tag("#"),
-        take_before0(|| alt((multispace1, tag("}")))),
-        multispace0,
+        take_while1(|c: char| !c.is_whitespace() && c != '}'),
     )
     .parse(input)?;
     Ok((remaining, ("id", id)))
 }
 
 fn parse_class(input: &str) -> IResult<&str, (&str, &str)> {
-    let (remaining, class) = delimited(
+    let (remaining, class) = preceded(
         tag("."),
-        take_before0(|| alt((multispace1, tag("}")))),
-        multispace0,
+        take_while1(|c: char| !c.is_whitespace() && c != '}'),
     )
     .parse(input)?;
     Ok((remaining, ("class", class)))
 }
 
 fn parse_key_value_pair(input: &str) -> IResult<&str, (&str, &str)> {
-    let parse_key = alphanumeric1;
-    let parse_value = delimited(tag("\""), take_while(|c| c != '"'), tag("\""));
-    separated_pair(parse_key, tag("="), parse_value).parse(input)
+    let parse_quoted_value = delimited(
+        char('"'),
+        escaped(is_not("\\\""), '\\', one_of("\"\\")),
+        char('"')
+    );
+
+    let parse_value = alt((parse_quoted_value, alphanumeric1));
+    separated_pair(alphanumeric1, tag("="), parse_value).parse(input)
 }
 
 fn vec_to_hashmap_concat<'a>(vec: Vec<(&'a str, &str)>) -> HashMap<String, String> {
     let mut hashmap = HashMap::new();
 
     for (key, value) in vec {
-        hashmap
-            .entry(key.into())
-            .and_modify(|e| *e = format!("{} {}", e, value))
-            .or_insert(value.to_string());
+        if key == "class" {
+            hashmap
+                .entry(key.into())
+                .and_modify(|e| *e = format!("{} {}", e, value))
+                .or_insert(value.to_string());
+        } else {
+            // For keys other than "class", always replace with the new value.
+            hashmap.insert(key.into(), value.to_string());
+        }
     }
 
     hashmap
@@ -215,13 +221,17 @@ fn vec_to_hashmap_concat<'a>(vec: Vec<(&'a str, &str)>) -> HashMap<String, Strin
 
 fn parse_attributes(input: &str) -> IResult<&str, HashMap<String, String>> {
     let parse_attribute = alt((parse_id, parse_class, parse_key_value_pair));
-    let parse_attributes = many0(delimited(multispace0, parse_attribute, multispace0));
-
-    let mut attributes_parser = delimited(
+    let single_group_attributes = separated_list0(multispace1, parse_attribute);
+    let single_group = delimited(
         tag("{"),
-        map(parse_attributes, |attrs| vec_to_hashmap_concat(attrs)),
-        tag("}"),
+        preceded(space0, single_group_attributes),
+        preceded(space0, tag("}")),
     );
+
+    let mut attributes_parser = map(separated_list1(opt(line_ending), single_group), |attrs| {
+        vec_to_hashmap_concat(attrs.concat())
+    });
+
     attributes_parser.parse(input)
 }
 
@@ -318,8 +328,18 @@ fn parse_markdown_not_plain(
     move |i: &str| {
         alt((
             map(
+                (take_while1(|c: char| c.is_alphanumeric()), parse_attributes),
+                |(s, attr)| {
+                    MarkdownInline::Plaintext(s.into(), Some(attr).filter(|m| !m.is_empty()))
+                },
+            ),
+            map(
                 match_surround2_with_attrs(true, "{*", "*}"),
                 |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Bold(s, attr),
+            ),
+            map(
+                match_surround2_with_attrs(true, "{=", "=}"),
+                |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Highlight(s, attr),
             ),
             map(
                 match_surround2_with_attrs(true, "{_", "_}"),
@@ -333,7 +353,6 @@ fn parse_markdown_not_plain(
                 match_surround2_with_attrs(true, "_", "_"),
                 |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Italic(s, attr),
             ),
-            // ← FIX: use backticks for inline code instead of empty delimiters
             map(
                 match_surround2_with_attrs(false, "`", "`"),
                 |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::InlineCode(s, attr),
@@ -372,7 +391,9 @@ fn parse_markdown_not_plain(
             ),
             map(
                 match_surround2_with_attrs(true, "[", "]"),
-                |(s, attr): (MarkdownText, MarkdownAttributes)| MarkdownInline::Span(s, attr),
+                |(s, attr): (MarkdownText, MarkdownAttributes)| {
+                    MarkdownInline::Span(s, attr.filter(|m| !m.is_empty()))
+                },
             ),
         ))
         .parse(i)

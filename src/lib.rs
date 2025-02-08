@@ -38,6 +38,7 @@ pub enum MarkdownInline {
     Image(String, String, MarkdownAttributes),
     InlineCode(MarkdownText, MarkdownAttributes),
     Bold(MarkdownText, MarkdownAttributes),
+    Highlight(MarkdownText, MarkdownAttributes),
     Italic(MarkdownText, MarkdownAttributes),
     Span(MarkdownText, MarkdownAttributes),
     Plaintext(String, MarkdownAttributes),

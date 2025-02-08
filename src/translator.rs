@@ -100,7 +100,7 @@ pub fn translate_attributes(opt: &MarkdownAttributes) -> String {
         hash_map
             .iter()
             .sorted()
-            .map(|(k, v)| format!(" {}=\"{}\"", k, v))
+            .map(|(k, v)| format!(" {}=\"{}\"", k, html_escape::encode_quoted_attribute(&v.replace("\\\"", "\""))))
             .collect::<Vec<_>>()
             .join("")
     })
@@ -188,22 +188,20 @@ pub fn translate_line(text: MarkdownText, attr: &MarkdownAttributes) -> String {
 pub fn translate_text(text: MarkdownText) -> String {
     text.iter()
         .map(|part| match part {
-            MarkdownInline::Bold(text, attr) => {
-                translate_to_element("strong", &translate_text(text.to_vec()), attr)
-            }
-            MarkdownInline::Italic(text, attr) => {
-                translate_to_element("em", &translate_text(text.to_vec()), attr)
-            }
-            MarkdownInline::InlineCode(code, attr) => {
-                translate_to_element("code", &translate_text(code.to_vec()), attr)
-            }
+            MarkdownInline::Bold(text, attr) => translate_to_element("strong", &translate_text(text.to_vec()), attr),
+            MarkdownInline::Highlight(text, attr) => translate_to_element("mark", &translate_text(text.to_vec()), attr),
+            MarkdownInline::Italic(text, attr) => translate_to_element("em", &translate_text(text.to_vec()), attr),
+            MarkdownInline::InlineCode(code, attr) => translate_to_element("code", &translate_text(code.to_vec()), attr),
             MarkdownInline::Link(text, url, attr) => translate_link(text, url, attr),
             MarkdownInline::Image(text, url, attr) => translate_image(text, url, attr),
-            MarkdownInline::Plaintext(text, _attr) => html_escape::encode_text(text).to_string(),
+            MarkdownInline::Plaintext(text, None) => html_escape::encode_text(text).to_string(),
+            MarkdownInline::Plaintext(text, attr) => translate_to_element(
+                "span",
+                &translate_text(vec![MarkdownInline::Plaintext(text.into(), None)]),
+                attr,
+            ),
             MarkdownInline::LineBreak => "\n".into(),
-            MarkdownInline::Span(text, attr) => {
-                translate_to_element("span", &translate_text(text.to_vec()), attr)
-            }
+            MarkdownInline::Span(text, attr) => translate_to_element("span", &translate_text(text.to_vec()), attr),
         })
         .collect::<Vec<String>>()
         .join("")
@@ -215,6 +213,7 @@ pub fn translate_text_raw(text: MarkdownText) -> String {
     text.iter()
         .map(|part| match part {
             MarkdownInline::Bold(text, _attr) => translate_text_raw(text.to_vec()),
+            MarkdownInline::Highlight(text, _attr) => translate_text_raw(text.to_vec()),
             MarkdownInline::Italic(text, _attr) => translate_text(text.to_vec()),
             MarkdownInline::InlineCode(code, _attr) => translate_text(code.to_vec()),
             MarkdownInline::Link(text, _url, _attr) => text.to_string(),
