@@ -80,7 +80,7 @@ checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
 
 [[package]]
 name = "djotters"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "env_logger",
  "html-escape",
