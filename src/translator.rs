@@ -100,7 +100,13 @@ pub fn translate_attributes(opt: &MarkdownAttributes) -> String {
         hash_map
             .iter()
             .sorted()
-            .map(|(k, v)| format!(" {}=\"{}\"", k, html_escape::encode_quoted_attribute(&v.replace("\\\"", "\""))))
+            .map(|(k, v)| {
+                format!(
+                    " {}=\"{}\"",
+                    k,
+                    html_escape::encode_quoted_attribute(&v.replace("\\\"", "\""))
+                )
+            })
             .collect::<Vec<_>>()
             .join("")
     })
@@ -188,24 +194,42 @@ pub fn translate_line(text: MarkdownText, attr: &MarkdownAttributes) -> String {
 pub fn translate_text(text: MarkdownText) -> String {
     text.iter()
         .map(|part| match part {
-            MarkdownInline::Bold(text, attr) => translate_to_element("strong", &translate_text(text.to_vec()), attr),
-            MarkdownInline::Superscript(text, attr) => translate_to_element("sup", &translate_text(text.to_vec()), attr),
-            MarkdownInline::Subscript(text, attr) => translate_to_element("sub", &translate_text(text.to_vec()), attr),
-            MarkdownInline::Insert(text, attr) => translate_to_element("ins", &translate_text(text.to_vec()), attr),
-            MarkdownInline::Delete(text, attr) => translate_to_element("del", &translate_text(text.to_vec()), attr),
-            MarkdownInline::Highlight(text, attr) => translate_to_element("mark", &translate_text(text.to_vec()), attr),
-            MarkdownInline::Italic(text, attr) => translate_to_element("em", &translate_text(text.to_vec()), attr),
-            MarkdownInline::InlineCode(code, attr) => translate_to_element("code", &translate_text(code.to_vec()), attr),
+            MarkdownInline::Bold(text, attr) => {
+                translate_to_element("strong", &translate_text(text.to_vec()), attr)
+            }
+            MarkdownInline::Superscript(text, attr) => {
+                translate_to_element("sup", &translate_text(text.to_vec()), attr)
+            }
+            MarkdownInline::Subscript(text, attr) => {
+                translate_to_element("sub", &translate_text(text.to_vec()), attr)
+            }
+            MarkdownInline::Insert(text, attr) => {
+                translate_to_element("ins", &translate_text(text.to_vec()), attr)
+            }
+            MarkdownInline::Delete(text, attr) => {
+                translate_to_element("del", &translate_text(text.to_vec()), attr)
+            }
+            MarkdownInline::Highlight(text, attr) => {
+                translate_to_element("mark", &translate_text(text.to_vec()), attr)
+            }
+            MarkdownInline::Italic(text, attr) => {
+                translate_to_element("em", &translate_text(text.to_vec()), attr)
+            }
+            MarkdownInline::InlineCode(code, attr) => {
+                translate_to_element("code", &translate_text(code.to_vec()), attr)
+            }
             MarkdownInline::Link(text, url, attr) => translate_link(text, url, attr),
             MarkdownInline::Image(text, url, attr) => translate_image(text, url, attr),
-            MarkdownInline::Plaintext(text, None) => html_escape::encode_text(text).to_string(),
+            MarkdownInline::Plaintext(text, None) => text.into(),
             MarkdownInline::Plaintext(text, attr) => translate_to_element(
                 "span",
                 &translate_text(vec![MarkdownInline::Plaintext(text.into(), None)]),
                 attr,
             ),
             MarkdownInline::LineBreak => "\n".into(),
-            MarkdownInline::Span(text, attr) => translate_to_element("span", &translate_text(text.to_vec()), attr),
+            MarkdownInline::Span(text, attr) => {
+                translate_to_element("span", &translate_text(text.to_vec()), attr)
+            }
         })
         .collect::<Vec<String>>()
         .join("")
@@ -264,7 +288,7 @@ mod tests {
     #[test_case("_emphasized text_\n\n*strong emphasis*","<p><em>emphasized text</em></p>\n<p><strong>strong emphasis</strong></p>" ; "EmphasisStrong")]
     #[test_case(
         "{#idName .class style=\"background-color:red\"}\n_emphasized text_\n\n{#id2 .cName width=\"100%\"}\n*strong emphasis*",
-        "<p class=\"class\" id=\"idName\" style=\"background-color:red\"><em>emphasized text</em></p>\n<p class=\"cName\" id=\"id2\" width=\"100%\"><strong>strong emphasis</strong></p>" ; 
+        "<p class=\"class\" id=\"idName\" style=\"background-color:red\"><em>emphasized text</em></p>\n<p class=\"cName\" id=\"id2\" width=\"100%\"><strong>strong emphasis</strong></p>" ;
         "Attributes"
     )]
     fn test_e2e_precedence_and_links(input: &str, output: &str) {
@@ -487,18 +511,18 @@ r#"<p>{a=x
     }
 
     #[test_case(
-        "This is a [test of\n*color*]{.blue}.", 
-        "<p>This is a <span class=\"blue\">test of\n<strong>color</strong></span>.</p>" ; 
+        "This is a [test of\n*color*]{.blue}.",
+        "<p>This is a <span class=\"blue\">test of\n<strong>color</strong></span>.</p>" ;
         "SpanWithLineBreakAndEmphasis"
     )]
     #[test_case(
-        "not a [span] {#id}.", 
-        "<p>not a [span] .</p>" ; 
+        "not a [span] {#id}.",
+        "<p>not a [span] .</p>" ;
         "NotASpanDueToSpaceBeforeAttribute"
     )]
     #[test_case(
-        "[nested [span]{.blue}]{#ident}", 
-        "<p><span id=\"ident\">nested <span class=\"blue\">span</span></span></p>" ; 
+        "[nested [span]{.blue}]{#ident}",
+        "<p><span id=\"ident\">nested <span class=\"blue\">span</span></span></p>" ;
         "NestedSpan"
     )]
     fn test_spans(input: &str, output: &str) {
@@ -515,75 +539,75 @@ r#"<p>{a=x
     }
 
     #[test_case(
-        "## Heading", 
-        "<section id=\"Heading\">\n<h2>Heading</h2>\n</section>" ; 
+        "## Heading",
+        "<section id=\"Heading\">\n<h2>Heading</h2>\n</section>" ;
         "Heading_H2"
     )]
     #[test_case(
-        "# Heading\n\n# another", 
-        "<section id=\"Heading\">\n<h1>Heading</h1>\n</section>\n<section id=\"another\">\n<h1>another</h1>\n</section>" ; 
+        "# Heading\n\n# another",
+        "<section id=\"Heading\">\n<h1>Heading</h1>\n</section>\n<section id=\"another\">\n<h1>another</h1>\n</section>" ;
         "Multiple_Headings"
     )]
     #[test_case(
-        "# Heading\n# continued", 
-        "<section id=\"Heading-continued\">\n<h1>Heading\ncontinued</h1>\n</section>" ; 
+        "# Heading\n# continued",
+        "<section id=\"Heading-continued\">\n<h1>Heading\ncontinued</h1>\n</section>" ;
         "Heading_Continued"
     )]
     #[test_case(
-        "##\nheading\n\npara", 
-        "<section id=\"heading\">\n<h2>heading</h2>\n<p>para</p>\n</section>" ; 
+        "##\nheading\n\npara",
+        "<section id=\"heading\">\n<h2>heading</h2>\n<p>para</p>\n</section>" ;
         "Heading_With_Paragraph"
     )]
     #[test_case("##", "<section id=\"s-1\">\n<h2></h2>\n</section>" ; "Empty_Heading")]
     #[test_case(
-        "## Heading\n### Next level", 
-        "<section id=\"Heading\">\n<h2>Heading</h2>\n<section id=\"Next-level\">\n<h3>Next level</h3>\n</section>\n</section>" ; 
+        "## Heading\n### Next level",
+        "<section id=\"Heading\">\n<h2>Heading</h2>\n<section id=\"Next-level\">\n<h3>Next level</h3>\n</section>\n</section>" ;
         "Nested_Headings"
     )]
     #[test_case(
-        "# Heading\nlazy", 
-        "<section id=\"Heading-lazy\">\n<h1>Heading\nlazy</h1>\n</section>" ; 
+        "# Heading\nlazy",
+        "<section id=\"Heading-lazy\">\n<h1>Heading\nlazy</h1>\n</section>" ;
         "Heading_With_Lazy"
     )]
     #[test_case(
-        "# Heading\nlazy\n# more\nlazy\n\ntext", 
-        "<section id=\"Heading-lazy-more-lazy\">\n<h1>Heading\nlazy\nmore\nlazy</h1>\n<p>text</p>\n</section>" ; 
+        "# Heading\nlazy\n# more\nlazy\n\ntext",
+        "<section id=\"Heading-lazy-more-lazy\">\n<h1>Heading\nlazy\nmore\nlazy</h1>\n<p>text</p>\n</section>" ;
         "Heading_With_Multiple_Lazy_Lines"
     )]
     #[test_case(
-        "##Notheading", 
-        "<p>##Notheading</p>" ; 
+        "##Notheading",
+        "<p>##Notheading</p>" ;
         "Not_A_Heading"
     )]
     #[test_case("   ##    Heading", "<section id=\"Heading\">\n<h2>Heading</h2>\n</section>" ; "Heading_With_Leading_Spaces")]
     #[test_case(
-        "## heading ##", 
-        "<section id=\"heading\">\n<h2>heading ##</h2>\n</section>" ; 
+        "## heading ##",
+        "<section id=\"heading\">\n<h2>heading ##</h2>\n</section>" ;
         "Heading_With_Trailing_Hash"
     )]
     #[test_case(
-        "# # heading", 
-        "<section id=\"heading\">\n<h1># heading</h1>\n</section>" ; 
+        "# # heading",
+        "<section id=\"heading\">\n<h1># heading</h1>\n</section>" ;
         "Heading_Starting_With_Hash"
     )]
     #[test_case(
-        "{#Foo-bar}\nParagraph\n\n# Foo bar\n\n## Foo  bar\n\n{#baz}\n# Foo bar", 
-        "<p id=\"Foo-bar\">Paragraph</p>\n<section id=\"Foo-bar-1\">\n<h1>Foo bar</h1>\n<section id=\"Foo-bar-2\">\n<h2>Foo  bar</h2>\n</section>\n</section>\n<section id=\"baz\">\n<h1>Foo bar</h1>\n</section>" ; 
+        "{#Foo-bar}\nParagraph\n\n# Foo bar\n\n## Foo  bar\n\n{#baz}\n# Foo bar",
+        "<p id=\"Foo-bar\">Paragraph</p>\n<section id=\"Foo-bar-1\">\n<h1>Foo bar</h1>\n<section id=\"Foo-bar-2\">\n<h2>Foo  bar</h2>\n</section>\n</section>\n<section id=\"baz\">\n<h1>Foo bar</h1>\n</section>" ;
         "Auto_Identifiers"
     )]
     #[test_case(
-        "See [Introduction][]\n\n# Introduction", 
-        "<p>See <a href=\"#Introduction\">Introduction</a>.</p>\n<section id=\"Introduction\">\n<h1>Introduction</h1>\n</section>" ; 
+        "See [Introduction][]\n\n# Introduction",
+        "<p>See <a href=\"#Introduction\">Introduction</a>.</p>\n<section id=\"Introduction\">\n<h1>Introduction</h1>\n</section>" ;
         "Implicit_Header_Reference"
     )]
     #[test_case(
-        "See [Introduction][]\n\n{#foo}\n# Introduction", 
-        "<p>See <a href=\"#foo\">Introduction</a>.</p>\n<section id=\"foo\">\n<h1>Introduction</h1>\n</section>" ; 
+        "See [Introduction][]\n\n{#foo}\n# Introduction",
+        "<p>See <a href=\"#foo\">Introduction</a>.</p>\n<section id=\"foo\">\n<h1>Introduction</h1>\n</section>" ;
         "Implicit_Header_With_Explicit_Id"
     )]
     #[test_case(
-        "See [Introduction][]\n\n# Introduction\n\n[Introduction]: #bar", 
-        "<p>See <a href=\"#bar\">Introduction</a>.</p>\n<section id=\"Introduction\">\n<h1>Introduction</h1>\n</section>" ; 
+        "See [Introduction][]\n\n# Introduction\n\n[Introduction]: #bar",
+        "<p>See <a href=\"#bar\">Introduction</a>.</p>\n<section id=\"Introduction\">\n<h1>Introduction</h1>\n</section>" ;
         "Implicit_Header_With_Link_Definition"
     )]
     fn test_headings(input: &str, output: &str) {
